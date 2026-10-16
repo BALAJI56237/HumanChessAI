@@ -59,6 +59,7 @@ internal class HumanChessController(
         "/api/undo" -> undo()
         "/api/redo" -> redo()
         "/api/reset" -> reset()
+        "/api/load-fen" -> loadFen(body)
         "/api/settings" -> settings(body)
         "/api/pv" -> pv(body)
         "/api/line" -> line(body)
@@ -224,6 +225,26 @@ internal class HumanChessController(
             generation.incrementAndGet()
         }
         return ok(baseState())
+    }
+
+    private fun loadFen(body: JSONObject): NativeResponse {
+        val fen = body.optString("fen", "").trim()
+        if (fen.isBlank()) return error(400, "FEN is empty")
+        return try {
+            val loaded = Board().apply {
+                setEnableEvents(false)
+                loadFromFen(fen)
+            }
+            synchronized(lock) {
+                board = loaded
+                moveHistory.clear()
+                redoHistory.clear()
+                generation.incrementAndGet()
+            }
+            ok(baseState())
+        } catch (t: Throwable) {
+            error(400, "Invalid FEN: ${t.message ?: "could not load position"}")
+        }
     }
 
     private fun pv(body: JSONObject): NativeResponse {
