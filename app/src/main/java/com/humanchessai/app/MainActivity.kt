@@ -21,165 +21,230 @@ class MainActivity : Activity() {
     private lateinit var bridge: NativeBridge
 
     /**
-     * DroidFish-style compact chrome. Full screen remains board-first, while
-     * short Android split-screen panes shrink the surrounding controls but keep
-     * the board large enough to be useful. Maia output remains visible below.
+     * Mirror DroidFish's real portrait layout instead of guessing with
+     * split-screen media queries.
+     *
+     * DroidFish main.xml orders the screen as:
+     * title -> chessboard -> status + six 36x32dp buttons -> move/analysis area.
+     * ChessBoardPlay caps the board at 75% of available height in portrait and
+     * 65% of available width in landscape. Text is 12sp and title text 14sp.
+     *
+     * The DOM is rearranged at runtime to follow that same structure while all
+     * chess logic and Maia ONNX inference stay unchanged.
      */
-    private val compactDroidFishUiPatch = """
+    private val droidFishExactLayoutPatch = """
         (function () {
-          if (document.getElementById('humanchess-compact-droidfish-ui')) return;
+          if (window.__humanChessDroidFishExactLayout) return;
+          window.__humanChessDroidFishExactLayout = true;
+
+          var app = document.querySelector('.app');
+          var topbar = document.querySelector('.topbar');
+          var boardWrap = document.querySelector('.boardWrap');
+          var moves = document.getElementById('moves');
+          var tools = document.querySelector('.tools');
+          var analysis = document.querySelector('.analysis');
+          var status = document.getElementById('status');
+          if (!app || !topbar || !boardWrap || !moves || !tools || !analysis || !status) return;
+
+          // DroidFish puts current-position status and buttons on the SAME row.
+          var row = document.getElementById('dfStatusRow');
+          if (!row) {
+            row = document.createElement('div');
+            row.id = 'dfStatusRow';
+            boardWrap.insertAdjacentElement('afterend', row);
+          }
+          row.appendChild(status);
+          row.appendChild(tools);
+
+          // DroidFish keeps move/analysis text in the remaining area below.
+          analysis.insertBefore(moves, analysis.firstChild);
+
           var style = document.createElement('style');
-          style.id = 'humanchess-compact-droidfish-ui';
+          style.id = 'humanchess-droidfish-exact-css';
           style.textContent = `
+            html, body {
+              width: 100% !important;
+              height: 100% !important;
+              margin: 0 !important;
+              overflow: hidden !important;
+            }
+            .app {
+              width: 100% !important;
+              height: 100dvh !important;
+              min-height: 0 !important;
+              display: flex !important;
+              flex-direction: column !important;
+              overflow: hidden !important;
+            }
+
+            /* DroidFish title.xml uses 14sp title/player text. */
             .topbar {
+              flex: 0 0 auto !important;
               height: 36px !important;
-              grid-template-columns: 30px 1fr auto 1fr !important;
-              padding: 0 4px !important;
-              gap: 2px !important;
+              min-height: 36px !important;
+              grid-template-columns: 28px 1fr 1fr 1fr !important;
+              align-items: center !important;
+              padding: 0 2px 2px !important;
+              gap: 1px !important;
             }
             .hamb {
-              width: 28px !important;
-              height: 28px !important;
-              font-size: 21px !important;
+              width: 26px !important;
+              height: 30px !important;
               padding: 0 !important;
+              border: 0 !important;
+              font-size: 20px !important;
+              line-height: 1 !important;
             }
-            .player {
-              font-size: 11px !important;
-              font-weight: 700 !important;
-            }
+            .player,
             .title {
-              font-size: 13px !important;
-              font-weight: 800 !important;
+              font-size: 14px !important;
+              line-height: 16px !important;
+              font-weight: 600 !important;
             }
+            .title { font-weight: 700 !important; }
             .title small {
+              display: block !important;
+              margin: 0 !important;
               font-size: 8px !important;
-              margin-top: 1px !important;
+              line-height: 8px !important;
+              font-weight: 400 !important;
             }
 
-            .moves {
-              height: 24px !important;
-              padding: 3px 4px !important;
-              font: 11px/18px monospace !important;
+            /* Board dimension is assigned by layoutLikeDroidFish(). */
+            .boardWrap {
+              flex: 0 0 auto !important;
+              align-self: center !important;
+              margin: 0 auto !important;
+              aspect-ratio: 1 / 1 !important;
+              overflow: hidden !important;
             }
+            .coord { font-size: 9px !important; }
 
+            /* main.xml: status has weight=1, then six 36x32dp buttons. */
+            #dfStatusRow {
+              flex: 0 0 36px !important;
+              width: 100% !important;
+              height: 36px !important;
+              display: flex !important;
+              align-items: flex-start !important;
+              padding: 1px 6px 3px 1px !important;
+              margin: 0 !important;
+              overflow: hidden !important;
+            }
+            #dfStatusRow .status {
+              flex: 1 1 auto !important;
+              min-width: 0 !important;
+              min-height: 0 !important;
+              margin: 0 !important;
+              padding: 2px 2px 0 0 !important;
+              color: var(--move) !important;
+              font: 12px/15px monospace !important;
+              white-space: nowrap !important;
+              overflow: hidden !important;
+              text-overflow: ellipsis !important;
+            }
             .tools {
-              height: 39px !important;
-              gap: 3px !important;
-              padding: 2px 4px !important;
+              flex: 0 0 auto !important;
+              width: auto !important;
+              height: 32px !important;
+              min-height: 32px !important;
+              display: flex !important;
+              align-items: stretch !important;
+              justify-content: flex-end !important;
+              gap: 0 !important;
+              margin: 0 !important;
+              padding: 0 !important;
             }
             .tool {
-              width: 34px !important;
-              height: 34px !important;
-              min-width: 34px !important;
-              border-radius: 6px !important;
-              font-size: 19px !important;
-              box-shadow: 0 1px 2px #0005 !important;
+              box-sizing: border-box !important;
+              width: 36px !important;
+              min-width: 36px !important;
+              height: 32px !important;
+              min-height: 32px !important;
+              margin: 0 !important;
               padding: 0 !important;
+              border-radius: 3px !important;
+              font-size: 21px !important;
+              line-height: 30px !important;
+              box-shadow: none !important;
             }
-            .tool.nav { font-size: 25px !important; }
+            .tool.nav { font-size: 27px !important; }
 
+            /* DroidFish move/thinking TextViews use 12sp monospace. */
             .analysis {
-              min-height: 150px !important;
-              padding: 2px 4px 12px !important;
-              font: 11px/1.32 monospace !important;
+              flex: 1 1 auto !important;
+              min-height: 0 !important;
+              height: auto !important;
+              overflow-y: auto !important;
+              overflow-x: hidden !important;
+              margin: 0 !important;
+              padding: 0 2px 3px !important;
+              color: var(--move) !important;
+              font: 12px/1.25 monospace !important;
             }
-            .status { min-height: 16px !important; }
-            .pv { margin: 3px 0 !important; }
-            .pct { min-width: 43px !important; font-size: 11px !important; }
-            .wdl { margin-top: 4px !important; font-size: 11px !important; }
-
-            .navDrawer { width: min(72vw, 330px) !important; }
-            .navItem { padding: 14px 16px !important; font-size: 16px !important; }
-            .dialog { width: min(90vw, 420px) !important; border-radius: 16px !important; padding: 14px !important; }
-            .dialog h2 { font-size: 18px !important; margin: 1px 0 10px !important; }
-            .dialog h3 { font-size: 11px !important; margin: 12px 0 6px !important; }
-            .dialog .action { padding: 11px 6px !important; font-size: 15px !important; }
-            .dialog .closeBtn { margin-top: 10px !important; padding: 9px !important; font-size: 14px !important; }
-            .choice small, .helpText { font-size: 11px !important; }
-
-            /* Split-screen: keep the compact DroidFish chrome, but keep the
-               chessboard around 80% of the pane width instead of collapsing it
-               to half-width. */
-            @media (max-height: 1150px) {
-              html, body { overflow-y: hidden !important; }
-              .app {
-                min-height: 100dvh !important;
-                height: 100dvh !important;
-                overflow: hidden !important;
-              }
-
-              .topbar {
-                height: 30px !important;
-                grid-template-columns: 25px 1fr auto 1fr !important;
-                padding: 0 2px !important;
-                gap: 1px !important;
-              }
-              .hamb { width: 23px !important; height: 23px !important; font-size: 17px !important; }
-              .player { font-size: 9px !important; }
-              .title { font-size: 10px !important; }
-              .title small { font-size: 6.5px !important; margin-top: 0 !important; }
-
-              .boardWrap {
-                width: min(82vw, calc(100dvh - 190px)) !important;
-                max-width: 100% !important;
-                aspect-ratio: 1 !important;
-                margin: 0 auto !important;
-              }
-              .coord { font-size: 8px !important; }
-
-              .moves {
-                height: 19px !important;
-                padding: 2px 3px !important;
-                font: 9.5px/15px monospace !important;
-              }
-
-              .tools {
-                height: 34px !important;
-                gap: 2px !important;
-                padding: 1px 4px !important;
-              }
-              .tool {
-                width: 30px !important;
-                height: 30px !important;
-                min-width: 30px !important;
-                border-radius: 5px !important;
-                font-size: 16px !important;
-              }
-              .tool.nav { font-size: 20px !important; }
-
-              .analysis {
-                min-height: 0 !important;
-                height: calc(100dvh - 83px - min(82vw, calc(100dvh - 190px))) !important;
-                overflow-y: auto !important;
-                padding: 1px 4px 5px !important;
-                font: 9.5px/1.23 monospace !important;
-              }
-              .status { min-height: 13px !important; }
-              .pv { margin: 1px 0 !important; }
-              .pct { min-width: 38px !important; font-size: 9.5px !important; }
-              .wdl { margin-top: 2px !important; font-size: 9.5px !important; }
+            .moves {
+              display: block !important;
+              width: 100% !important;
+              height: auto !important;
+              min-height: 17px !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              border: 0 !important;
+              color: var(--move) !important;
+              font: 12px/16px monospace !important;
+              white-space: nowrap !important;
+              overflow-x: auto !important;
+              overflow-y: hidden !important;
+            }
+            #pvs { margin: 0 !important; padding: 0 !important; }
+            .pv {
+              margin: 0 !important;
+              padding: 0 !important;
+              font: 12px/15px monospace !important;
+              overflow-wrap: anywhere !important;
+            }
+            .pct {
+              min-width: 50px !important;
+              font-size: 12px !important;
+              font-weight: 700 !important;
+            }
+            .wdl {
+              margin: 1px 0 0 !important;
+              padding: 0 !important;
+              font: 12px/15px monospace !important;
             }
 
-            @media (max-height: 900px) {
-              .topbar { height: 27px !important; }
-              .hamb { width: 21px !important; height: 21px !important; font-size: 15px !important; }
-              .player { font-size: 8px !important; }
-              .title { font-size: 9px !important; }
-              .title small { display: none !important; }
-
-              .boardWrap { width: min(78vw, calc(100dvh - 185px)) !important; }
-              .moves { height: 18px !important; font-size: 9px !important; }
-              .tools { height: 31px !important; }
-              .tool { width: 27px !important; height: 27px !important; min-width: 27px !important; font-size: 14px !important; }
-              .tool.nav { font-size: 18px !important; }
-              .analysis {
-                height: calc(100dvh - 76px - min(78vw, calc(100dvh - 185px))) !important;
-                font-size: 9px !important;
-                line-height: 1.18 !important;
-              }
-            }
+            .navDrawer { width: min(82vw, 360px) !important; }
           `;
           document.head.appendChild(style);
+
+          function layoutLikeDroidFish() {
+            var vw = Math.max(1, app.clientWidth || window.innerWidth || 1);
+            var vh = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
+            var titleH = Math.max(0, topbar.getBoundingClientRect().height);
+            var availableH = Math.max(1, vh - titleH);
+
+            // Exact constants from ChessBoardPlay:
+            // portrait -> max 75% of available height
+            // landscape -> max 65% of available width
+            var portrait = availableH > vw;
+            var side = portrait
+              ? Math.min(vw, Math.floor(availableH * 0.75))
+              : Math.min(availableH, Math.floor(vw * 0.65));
+
+            // Never let browser rounding collapse the board to a tiny size.
+            side = Math.max(Math.min(vw, 280), side);
+            boardWrap.style.width = side + 'px';
+            boardWrap.style.height = side + 'px';
+          }
+
+          layoutLikeDroidFish();
+          requestAnimationFrame(layoutLikeDroidFish);
+          setTimeout(layoutLikeDroidFish, 80);
+          window.addEventListener('resize', layoutLikeDroidFish, {passive:true});
+          if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', layoutLikeDroidFish, {passive:true});
+          }
         })();
     """.trimIndent()
 
@@ -204,7 +269,7 @@ class MainActivity : Activity() {
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
-                webView.evaluateJavascript(compactDroidFishUiPatch, null)
+                webView.evaluateJavascript(droidFishExactLayoutPatch, null)
             }
         }
         webView.overScrollMode = View.OVER_SCROLL_NEVER
