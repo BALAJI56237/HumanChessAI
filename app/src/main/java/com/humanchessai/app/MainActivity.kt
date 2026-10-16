@@ -215,6 +215,53 @@ class MainActivity : Activity() {
             }
 
             .navDrawer { width: min(82vw, 360px) !important; }
+
+            /* DroidFish-style pawn promotion context dialog. */
+            #hcaPromotionShade {
+              position: fixed !important;
+              inset: 0 !important;
+              z-index: 120 !important;
+              display: none !important;
+              align-items: center !important;
+              justify-content: center !important;
+              background: #0008 !important;
+            }
+            #hcaPromotionShade.open { display: flex !important; }
+            #hcaPromotionMenu {
+              width: min(78vw, 320px) !important;
+              overflow: hidden !important;
+              border-radius: 4px !important;
+              background: #3b3b3b !important;
+              box-shadow: 0 8px 26px #000a !important;
+              color: #fff !important;
+            }
+            #hcaPromotionTitle {
+              padding: 13px 16px 10px !important;
+              font-size: 18px !important;
+              font-weight: 500 !important;
+              border-bottom: 1px solid #ffffff1f !important;
+            }
+            .hcaPromotionItem {
+              width: 100% !important;
+              height: 52px !important;
+              display: flex !important;
+              align-items: center !important;
+              gap: 12px !important;
+              padding: 4px 16px !important;
+              border: 0 !important;
+              border-bottom: 1px solid #ffffff18 !important;
+              background: transparent !important;
+              color: #fff !important;
+              text-align: left !important;
+              font-size: 17px !important;
+            }
+            .hcaPromotionItem:last-child { border-bottom: 0 !important; }
+            .hcaPromotionItem:active { background: #ffffff18 !important; }
+            .hcaPromotionItem img {
+              width: 38px !important;
+              height: 38px !important;
+              object-fit: contain !important;
+            }
           `;
           document.head.appendChild(style);
 
@@ -245,6 +292,108 @@ class MainActivity : Activity() {
           if (window.visualViewport) {
             window.visualViewport.addEventListener('resize', layoutLikeDroidFish, {passive:true});
           }
+
+          // DroidFish does not auto-queen. When a pawn reaches the final rank it
+          // opens a context menu with Queen, Rook, Bishop and Knight. Override
+          // the web UI move sender to do the same before committing the move.
+          var promotionShade = document.createElement('div');
+          promotionShade.id = 'hcaPromotionShade';
+          promotionShade.innerHTML = '<div id="hcaPromotionMenu"><div id="hcaPromotionTitle">Promote pawn to?</div><div id="hcaPromotionItems"></div></div>';
+          document.body.appendChild(promotionShade);
+
+          var promotionResolver = null;
+          function closePromotion(choice) {
+            promotionShade.classList.remove('open');
+            var resolver = promotionResolver;
+            promotionResolver = null;
+            if (resolver) resolver(choice || null);
+          }
+          function choosePromotion(options) {
+            return new Promise(function(resolve) {
+              promotionResolver = resolve;
+              var box = document.getElementById('hcaPromotionItems');
+              box.innerHTML = '';
+              var sideWhite = !data || data.turn === 'white';
+              var choices = [
+                ['q', 'Queen', sideWhite ? 'Q' : 'q'],
+                ['r', 'Rook', sideWhite ? 'R' : 'r'],
+                ['b', 'Bishop', sideWhite ? 'B' : 'b'],
+                ['n', 'Knight', sideWhite ? 'N' : 'n']
+              ];
+              choices.forEach(function(entry) {
+                if (options.indexOf(entry[0]) < 0) return;
+                var btn = document.createElement('button');
+                btn.className = 'hcaPromotionItem';
+                var img = document.createElement('img');
+                try {
+                  img.src = 'pieces/' + prefs.pieceSet + '/' + pieceFile[entry[2]];
+                } catch (_) {
+                  img.style.display = 'none';
+                }
+                var label = document.createElement('span');
+                label.textContent = entry[1];
+                btn.appendChild(img);
+                btn.appendChild(label);
+                btn.onclick = function() { closePromotion(entry[0]); };
+                box.appendChild(btn);
+              });
+              promotionShade.classList.add('open');
+            });
+          }
+          promotionShade.addEventListener('click', function(e) {
+            if (e.target === promotionShade) closePromotion(null);
+          });
+
+          var oldBack = window.nativeBackPressed;
+          window.nativeBackPressed = function() {
+            if (promotionShade.classList.contains('open')) {
+              closePromotion(null);
+              return true;
+            }
+            return oldBack ? oldBack() : false;
+          };
+
+          makeMove = async function(from, to) {
+            if (busy) return;
+            var promotion = null;
+            var base = from + to;
+            var options = [];
+            (data && data.legal_moves ? data.legal_moves : []).forEach(function(uci) {
+              if (uci.slice(0, 4) === base && uci.length >= 5) {
+                var p = uci.charAt(4).toLowerCase();
+                if ('qrbn'.indexOf(p) >= 0 && options.indexOf(p) < 0) options.push(p);
+              }
+            });
+
+            if (options.length) {
+              promotion = await choosePromotion(options);
+              if (!promotion) {
+                selected = null;
+                quickDest = null;
+                renderBoard();
+                return;
+              }
+            }
+
+            busy = true;
+            analysisEpoch++;
+            try {
+              var body = {from: from, to: to};
+              if (promotion) body.promotion = promotion;
+              data = await api('/api/move', {body: JSON.stringify(body)});
+              selected = null;
+              quickDest = null;
+              preds = [];
+              render();
+            } catch (e) {
+              toast(e.message);
+              selected = null;
+              quickDest = null;
+              renderBoard();
+            } finally {
+              busy = false;
+            }
+          };
         })();
     """.trimIndent()
 
