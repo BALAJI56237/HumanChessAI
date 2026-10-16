@@ -5,60 +5,563 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <title>HumanChessAI</title>
 <style>
-:root{color-scheme:dark;--bg:#2e2b60;--bar:#342f68;--light:#f2f3e8;--dark:#7ea8d1;--yellow:#f2e84a;--green:#34ef8e;--cyan:#74ddff;--muted:#b8b5d2}
-*{box-sizing:border-box}html,body{margin:0;background:#0c0d12;color:#fff;font-family:Arial,sans-serif;overflow-x:hidden}button,input{font:inherit}.app{width:min(100vw,720px);min-height:100vh;margin:auto;background:var(--bg)}
-header{height:60px;background:var(--bar);display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 10px;border-bottom:1px solid #59538a}.player{font-weight:800;font-size:16px}.player:last-child{text-align:right}.title{text-align:center;font-weight:900;font-size:18px;line-height:1.05}.title small{display:block;font-size:11px;color:#dddaf5;margin-top:4px}
-.boardWrap{width:100%;aspect-ratio:1;position:relative}.board{position:absolute;inset:0;display:grid;grid-template:repeat(8,1fr)/repeat(8,1fr);touch-action:none;user-select:none}.sq{display:flex;align-items:center;justify-content:center;position:relative;color:#18191b;font-family:"DejaVu Sans","Noto Sans Symbols 2","Segoe UI Symbol",sans-serif;font-size:clamp(34px,11vw,78px)}.sq.l{background:var(--light)}.sq.d{background:var(--dark)}.sq.sel{box-shadow:inset 0 0 0 4px #ffd930}.sq.last{box-shadow:inset 0 0 0 999px #ffe63a35}.sq.target:after{content:"";position:absolute;width:22%;aspect-ratio:1;border-radius:50%;background:#1117}.sq.capture:after{width:72%;background:transparent;border:4px solid #1116}.piece{pointer-events:none;z-index:2}.coord{position:absolute;font:700 10px monospace;opacity:.55}.file{bottom:3px;right:4px}.rank{top:4px;left:4px}.ghost{position:fixed;pointer-events:none;z-index:50;transform:translate(-50%,-50%);font-size:70px;color:#18191b;filter:drop-shadow(0 5px 5px #0008)}
-#arrows{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:4}.moves{height:32px;overflow-x:auto;white-space:nowrap;padding:5px 7px;color:var(--yellow);font:15px monospace;border-top:1px solid #514d83}.tools{height:58px;display:flex;gap:6px;justify-content:flex-end;align-items:center;padding:5px 8px}.tool{width:46px;height:46px;border:1px solid #5d5990;border-radius:9px;background:linear-gradient(#fafafa,#aaaab3);color:#111;font-size:26px;font-weight:800}.tool.active{background:linear-gradient(#edfff2,#75e5a0)}.tool.nav{color:#6058ff;font-size:34px}.analysis{min-height:230px;padding:4px 8px 20px;color:var(--yellow);font:15px/1.45 monospace}.status{min-height:22px}.status.busy:after{content:" …"}.pv{margin:6px 0;overflow-wrap:anywhere}.pct{color:var(--green);font-weight:900;display:inline-block;min-width:60px}.wdl{color:#cbc7ff;margin-top:9px}.error{color:#ff9f9f}
-.shade{display:none;position:fixed;inset:0;background:#0009;z-index:20}.shade.open{display:block}.drawer{width:min(86vw,360px);height:100%;background:#f1f1f1;color:#151515;padding:18px;overflow:auto}.drawer h2{margin:0 0 14px}.drawer label{display:block;font-weight:700;font-size:13px;margin:12px 0 5px}.drawer input{width:100%;padding:10px;border:1px solid #aaa;border-radius:6px;background:#fff;color:#111}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.presets{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.presets button,.drawer .action{border:0;border-radius:6px;padding:10px;background:#d8d8d8;color:#111;font-weight:700}.presets button.on{background:var(--bar);color:#fff}.drawer .action{background:var(--bar);color:#fff;margin-top:16px;margin-right:5px}.modalShade{display:none;position:fixed;inset:0;background:#0009;z-index:25;align-items:center;justify-content:center}.modalShade.open{display:flex}.modal{width:min(88vw,430px);background:#474747;border-radius:28px;padding:20px 0;overflow:hidden}.modal h2{margin:5px 28px 12px}.mode{width:100%;border:0;background:transparent;color:#fff;text-align:left;font-size:19px;padding:17px 28px}.mode.on{background:#fff2}.toast{display:none;position:fixed;z-index:60;left:50%;bottom:18px;transform:translateX(-50%);background:#111e;padding:9px 14px;border-radius:18px}.toast.show{display:block}
+:root{
+  color-scheme:dark;
+  --bg:#2e2b53;--bar:#302b59;--light:#fffffa;--dark:#83a5d2;--selected:#3232d1;
+  --text:#ffffff;--muted:#c4c1d8;--move:#f2e84a;--green:#32e78b;--label:#ff4b4b;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:#0d0e13;color:var(--text);font-family:Arial,sans-serif;overflow-x:hidden}
+button,input,select{font:inherit}
+button{cursor:pointer}
+.app{width:min(100vw,720px);min-height:100vh;margin:auto;background:var(--bg)}
+.topbar{height:64px;background:var(--bar);display:grid;grid-template-columns:46px 1fr auto 1fr;align-items:center;padding:0 8px;border-bottom:1px solid #ffffff26;gap:4px}
+.hamb{width:40px;height:40px;border:0;background:transparent;color:var(--text);font-size:28px;line-height:1}
+.player{font-weight:800;font-size:15px;white-space:nowrap}.player.right{text-align:right}
+.title{text-align:center;font-weight:900;font-size:18px;line-height:1.05;white-space:nowrap}.title small{display:block;font-size:11px;color:var(--muted);margin-top:4px}
+.boardWrap{width:100%;aspect-ratio:1;position:relative;overflow:hidden}
+.board{position:absolute;inset:0;display:grid;grid-template:repeat(8,1fr)/repeat(8,1fr);touch-action:none;user-select:none}
+.sq{display:flex;align-items:center;justify-content:center;position:relative;overflow:visible}
+.sq.l{background:var(--light)}.sq.d{background:var(--dark)}
+.sq.sel{box-shadow:inset 0 0 0 4px var(--selected)}
+.sq.quick{box-shadow:inset 0 0 0 4px #ffb52b}
+.sq.last:before{content:"";position:absolute;inset:0;background:#ffdf3550;z-index:0}
+.sq.target:after{content:"";position:absolute;width:20%;aspect-ratio:1;border-radius:50%;background:#1118;z-index:1}
+.sq.capture:after{width:70%;background:transparent;border:4px solid #1117}
+.piece{width:100%;height:100%;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:2}
+.piece img{width:92%;height:92%;object-fit:contain;display:block;pointer-events:none}
+.piece .fallback{display:none;align-items:center;justify-content:center;width:100%;height:100%;font-family:"DejaVu Sans","Noto Sans Symbols 2","Segoe UI Symbol",sans-serif;font-size:clamp(34px,11vw,78px);color:#18191b;line-height:1}
+.coord{position:absolute;font:700 10px monospace;color:var(--label);z-index:3;opacity:.9}.file{bottom:3px;right:4px}.rank{top:3px;left:4px}
+#arrows{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:4}
+.moves{height:34px;overflow-x:auto;white-space:nowrap;padding:6px 8px;color:var(--move);font:15px monospace;border-top:1px solid #ffffff22;scrollbar-width:none}.moves::-webkit-scrollbar{display:none}
+.tools{height:60px;display:flex;gap:6px;justify-content:flex-end;align-items:center;padding:6px 8px}
+.tool{width:48px;height:48px;border:1px solid #ffffff33;border-radius:10px;background:linear-gradient(#fafafa,#aaaab3);color:#111;font-size:26px;font-weight:800;box-shadow:0 2px 3px #0005}
+.tool.active{background:linear-gradient(#eafff0,#6be7a0)}.tool.nav{color:#5d55ff;font-size:34px}.tool:disabled{opacity:.38}
+.analysis{min-height:230px;padding:5px 10px 24px;color:var(--move);font:15px/1.5 monospace}
+.status{min-height:23px}.status.busy:after{content:" …"}.pv{margin:7px 0;overflow-wrap:anywhere}.pct{color:var(--green);font-weight:900;display:inline-block;min-width:62px}.wdl{color:#d1cdfa;margin-top:9px}.error{color:#ff9f9f}
+
+.overlay{display:none;position:fixed;inset:0;background:#0009;z-index:30}.overlay.open{display:block}
+.navDrawer{height:100%;width:min(82vw,420px);background:#292929ee;box-shadow:8px 0 30px #0008;overflow:auto;padding-top:max(10px,env(safe-area-inset-top))}
+.navItem{display:block;width:100%;border:0;border-bottom:1px solid #ffffff18;background:transparent;color:#eee;text-align:left;padding:20px 24px;font-size:22px}
+.navItem:active{background:#ffffff12}
+.dialogShade{display:none;position:fixed;inset:0;background:#0009;z-index:35;align-items:center;justify-content:center;padding:18px}.dialogShade.open{display:flex}
+.dialog{width:min(92vw,470px);max-height:86vh;overflow:auto;background:#444;border-radius:24px;color:#fff;padding:18px}
+.dialog h2{margin:2px 0 16px}.dialog h3{margin:18px 0 8px;font-size:14px;color:#8ce2d8;text-transform:uppercase;letter-spacing:.04em}
+.dialog .action{display:block;width:100%;border:0;border-top:1px solid #ffffff18;background:transparent;color:#fff;text-align:left;padding:15px 8px;font-size:18px}
+.dialog .action:first-of-type{border-top:0}.dialog .closeBtn{margin-top:14px;width:100%;padding:12px;border:0;border-radius:10px;background:#666;color:#fff;font-weight:700}
+.mode.on,.choice.on{background:#ffffff18}
+.choice small{display:block;font-size:12px;color:#ccc;margin-top:4px}
+.swatch{display:inline-grid;grid-template-columns:20px 20px;width:40px;height:20px;margin-right:10px;vertical-align:middle;border:1px solid #ffffff55}
+.settingsPage{display:none;position:fixed;inset:0;z-index:40;background:#2d2d2d;color:#fff;overflow:auto}.settingsPage.open{display:block}
+.settingsTop{position:sticky;top:0;height:58px;background:#242424;display:flex;align-items:center;gap:10px;padding:0 14px;z-index:2;border-bottom:1px solid #ffffff18}
+.backBtn{width:38px;height:38px;border:0;background:transparent;color:#fff;font-size:30px}.settingsTop h2{font-size:20px;margin:0}
+.sectionTitle{padding:20px 18px 8px;color:#6bd3c9;font-size:14px;font-weight:700}
+.settingRow{min-height:84px;border-bottom:1px solid #ffffff14;padding:16px 18px;display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center}
+.settingRow .name{font-size:18px}.settingRow .summary{font-size:13px;color:#c4c4c4;margin-top:4px;line-height:1.35}
+.settingRow input[type=checkbox]{width:28px;height:28px;accent-color:#69d1c7}
+.settingRow input[type=number],.settingRow select{min-width:118px;max-width:170px;background:#3a3a3a;color:#fff;border:1px solid #777;border-radius:7px;padding:9px}
+.settingRow input[type=range]{width:150px;accent-color:#69d1c7}
+.settingRow.clickable:active{background:#ffffff0b}
+.themeList,.pieceList{display:grid;gap:7px}
+.piecePreview{height:54px;display:flex;align-items:center;gap:0;margin:4px 0 10px;background:#777;border-radius:8px;padding:3px 10px}
+.piecePreview img{height:48px;width:48px;object-fit:contain}
+.fenInput{width:100%;min-height:88px;background:#222;color:#fff;border:1px solid #888;border-radius:8px;padding:10px;font:13px monospace;resize:vertical}
+.toast{display:none;position:fixed;z-index:80;left:50%;bottom:22px;transform:translateX(-50%);background:#111e;padding:10px 16px;border-radius:18px;white-space:nowrap}.toast.show{display:block}
+.helpText{color:#ddd;line-height:1.5;font-size:15px}.helpText b{color:#fff}
+@media(max-width:430px){
+  .topbar{grid-template-columns:40px 1fr auto 1fr;padding:0 4px}.player{font-size:13px}.title{font-size:17px}.title small{font-size:10px}
+  .tools{gap:4px}.tool{width:46px;height:46px}
+}
 </style>
 </head>
 <body>
 <main class="app">
-<header><div class="player" id="topPlayer">Black · 1500</div><div class="title">HumanChessAI<small id="sub">Maia3-5M · loading</small></div><div class="player" id="bottomPlayer">White · 1500</div></header>
-<div class="boardWrap"><div id="board" class="board"></div><svg id="arrows" viewBox="0 0 800 800"></svg></div>
-<div class="moves" id="moves">1. White to move</div>
-<div class="tools"><button id="settings" class="tool">⚙</button><button id="analysis" class="tool active">💡</button><button id="flip" class="tool">↻</button><button id="mode" class="tool">M</button><button id="undo" class="tool nav">←</button><button id="redo" class="tool nav">→</button></div>
-<section class="analysis"><div id="status" class="status">Loading…</div><div id="pvs"></div><div id="wdl" class="wdl"></div></section>
+  <header class="topbar">
+    <button id="menuBtn" class="hamb" aria-label="Menu">☰</button>
+    <div class="player" id="topPlayer">Black · 1500</div>
+    <div class="title">HumanChessAI<small id="sub">Maia3-5M · loading</small></div>
+    <div class="player right" id="bottomPlayer">White · 1500</div>
+  </header>
+
+  <div class="boardWrap">
+    <div id="board" class="board"></div>
+    <svg id="arrows" viewBox="0 0 800 800"></svg>
+  </div>
+
+  <div class="moves" id="moves">1. White to move</div>
+
+  <div class="tools">
+    <button id="settingsBtn" class="tool" aria-label="Settings">⚙</button>
+    <button id="analysisBtn" class="tool active" aria-label="Analysis">💡</button>
+    <button id="flipBtn" class="tool" aria-label="Flip board">↻</button>
+    <button id="modeBtn" class="tool" aria-label="Game mode">M</button>
+    <button id="undoBtn" class="tool nav" aria-label="Previous position">←</button>
+    <button id="redoBtn" class="tool nav" aria-label="Next position">→</button>
+  </div>
+
+  <section class="analysis">
+    <div id="status" class="status">Loading…</div>
+    <div id="pvs"></div>
+    <div id="wdl" class="wdl"></div>
+  </section>
 </main>
-<div id="settingsShade" class="shade"><aside class="drawer"><h2>Human analysis settings</h2><label>Analysis speed</label><div class="presets"><button data-preset="fast">Fast</button><button data-preset="balanced">Balanced</button><button data-preset="deep">Deep</button></div><div class="row"><div><label>White Elo</label><input id="whiteElo" type="number" min="0" max="5000"></div><div><label>Black Elo</label><input id="blackElo" type="number" min="0" max="5000"></div></div><div class="row"><div><label>Arrow candidates</label><input id="topN" type="number" min="1" max="8"></div><div><label>PV lines</label><input id="pvCount" type="number" min="1" max="4"></div></div><label>PV length (half-moves)</label><input id="pvPlies" type="number" min="2" max="16"><button id="apply" class="action">Apply</button><button id="closeSettings" class="action">Close</button></aside></div>
-<div id="modeShade" class="modalShade"><div class="modal"><h2>Select Game Mode</h2><button class="mode" data-mode="analysis">Analysis Mode</button><button class="mode" data-mode="edit">Edit/re-play Game</button><button class="mode" data-mode="white">Play White</button><button class="mode" data-mode="black">Play Black</button><button class="mode" data-mode="two">Two Players</button><button class="mode" data-mode="cvc">Computer vs Computer</button></div></div>
+
+<div id="navShade" class="overlay">
+  <aside class="navDrawer">
+    <button class="navItem" data-nav="new">New Game</button>
+    <button class="navItem" data-nav="edit">Edit Board</button>
+    <button class="navItem" data-nav="file">File</button>
+    <button class="navItem" data-nav="book">Select Opening Book</button>
+    <button class="navItem" data-nav="theme">Set Color Theme</button>
+    <button class="navItem" data-nav="settings">Settings</button>
+    <button class="navItem" data-nav="about">About / Help</button>
+  </aside>
+</div>
+
+<div id="modeShade" class="dialogShade">
+  <div class="dialog">
+    <h2>Select Game Mode</h2>
+    <button class="action mode" data-mode="analysis">Analysis Mode</button>
+    <button class="action mode" data-mode="edit">Edit/re-play Game</button>
+    <button class="action mode" data-mode="white">Play White</button>
+    <button class="action mode" data-mode="black">Play Black</button>
+    <button class="action mode" data-mode="two">Two Players</button>
+    <button class="action mode" data-mode="cvc">Computer vs Computer</button>
+    <button class="closeBtn" data-close="modeShade">Close</button>
+  </div>
+</div>
+
+<div id="fileShade" class="dialogShade">
+  <div class="dialog">
+    <h2>File</h2>
+    <button class="action" id="copyFen">Copy FEN</button>
+    <button class="action" id="pasteFen">Load FEN from clipboard</button>
+    <button class="action" id="copyPgn">Copy PGN</button>
+    <button class="action" id="fileNew">New Game</button>
+    <button class="closeBtn" data-close="fileShade">Close</button>
+  </div>
+</div>
+
+<div id="editShade" class="dialogShade">
+  <div class="dialog">
+    <h2>Edit Board / Load Position</h2>
+    <p class="helpText">Paste or edit a FEN position. Maia will analyze the loaded position after it is applied.</p>
+    <textarea id="fenEditor" class="fenInput"></textarea>
+    <button class="action" id="applyFen">Apply FEN</button>
+    <button class="action" id="editStart">Starting position</button>
+    <button class="closeBtn" data-close="editShade">Close</button>
+  </div>
+</div>
+
+<div id="bookShade" class="dialogShade">
+  <div class="dialog">
+    <h2>Select Opening Book</h2>
+    <button class="action choice" data-book="maia">Maia human policy<small>Recommended. Use Maia itself for human-like opening choices.</small></button>
+    <button class="action choice" data-book="none">No separate opening book<small>Maia analysis still remains active; no extra book layer is applied.</small></button>
+    <p class="helpText">HumanChessAI does not use Stockfish. External Polyglot book import is intentionally separate from the Maia predictor.</p>
+    <button class="closeBtn" data-close="bookShade">Close</button>
+  </div>
+</div>
+
+<div id="themeShade" class="dialogShade">
+  <div class="dialog">
+    <h2>Board Appearance</h2>
+    <h3>DroidFish color themes</h3>
+    <div id="themeList" class="themeList"></div>
+    <h3>Piece set</h3>
+    <select id="pieceSetSelect" style="width:100%;background:#333;color:#fff;border:1px solid #777;border-radius:8px;padding:11px"></select>
+    <div id="piecePreview" class="piecePreview"></div>
+    <button class="closeBtn" data-close="themeShade">Done</button>
+  </div>
+</div>
+
+<div id="aboutShade" class="dialogShade">
+  <div class="dialog">
+    <h2>HumanChessAI</h2>
+    <div class="helpText">
+      <p><b>Human move prediction:</b> Maia3-5M runs entirely on your phone using ONNX Runtime.</p>
+      <p><b>No Stockfish:</b> arrows, probabilities and continuation lines are generated from Maia's human policy.</p>
+      <p><b>Input:</b> enable or disable Drag Pieces in Settings. Tap-to-move always remains available.</p>
+      <p><b>Navigation:</b> use ← / →, or enable board swipe navigation in Settings.</p>
+      <p><b>Appearance:</b> DroidFish-compatible color themes and piece sets are available under Set Color Theme.</p>
+    </div>
+    <button class="closeBtn" data-close="aboutShade">Close</button>
+  </div>
+</div>
+
+<section id="settingsPage" class="settingsPage">
+  <div class="settingsTop"><button id="settingsBack" class="backBtn">‹</button><h2>Settings</h2></div>
+
+  <div class="sectionTitle">Human AI</div>
+  <div class="settingRow"><div><div class="name">White Elo</div><div class="summary">Rating conditioning for White's predicted moves</div></div><input id="whiteElo" type="number" min="0" max="5000"></div>
+  <div class="settingRow"><div><div class="name">Black Elo</div><div class="summary">Rating conditioning for Black's predicted moves</div></div><input id="blackElo" type="number" min="0" max="5000"></div>
+  <div class="settingRow"><div><div class="name">Analysis speed</div><div class="summary">Controls arrows and continuation depth</div></div><select id="analysisProfile"><option value="fast">Fast</option><option value="balanced">Balanced</option><option value="deep">Deep</option><option value="custom">Custom</option></select></div>
+  <div class="settingRow"><div><div class="name">Arrow candidates</div><div class="summary">Number of likely human moves drawn on the board</div></div><input id="topN" type="number" min="1" max="8"></div>
+  <div class="settingRow"><div><div class="name">PV lines</div><div class="summary">Number of human continuation lines</div></div><input id="pvCount" type="number" min="1" max="4"></div>
+  <div class="settingRow"><div><div class="name">PV length</div><div class="summary">Continuation length in half-moves</div></div><input id="pvPlies" type="number" min="2" max="16"></div>
+
+  <div class="sectionTitle">Board input</div>
+  <div class="settingRow"><div><div class="name">Quick Move Input</div><div class="summary">From and To squares can be touched in either order</div></div><input id="quickMove" type="checkbox"></div>
+  <div class="settingRow"><div><div class="name">Square selection</div><div class="summary">Control how selected squares and legal destinations are shown</div></div><select id="squareSelection"><option value="full">Selected + legal moves</option><option value="square">Selected square only</option><option value="none">No highlights</option></select></div>
+  <div class="settingRow"><div><div class="name">Drag Pieces</div><div class="summary">Drag a piece to make a move</div></div><input id="dragPieces" type="checkbox"></div>
+  <div class="settingRow"><div><div class="name">Scrolling Speed</div><div class="summary">Swipe sensitivity for position navigation</div></div><input id="scrollSpeed" type="range" min="0" max="100" step="5"></div>
+  <div class="settingRow"><div><div class="name">Invert Scroll Direction</div><div class="summary">Reverse left/right board navigation</div></div><input id="invertScroll" type="checkbox"></div>
+  <div class="settingRow"><div><div class="name">Swipe horizontally navigates moves</div><div class="summary">Swipe an empty square to move backward/forward</div></div><input id="swipeNav" type="checkbox"></div>
+  <div class="settingRow"><div><div class="name">Auto scroll move list</div><div class="summary">Keep the latest move visible automatically</div></div><input id="autoScrollMoves" type="checkbox"></div>
+  <div class="settingRow"><div><div class="name">Auto Move Delay</div><div class="summary">Delay between moves in automatic play modes</div></div><select id="autoMoveDelay"><option value="100">0.1 s</option><option value="250">0.25 s</option><option value="500">0.5 s</option><option value="1000">1.0 s</option><option value="2000">2.0 s</option></select></div>
+
+  <div class="sectionTitle">Appearance</div>
+  <div class="settingRow clickable" id="openAppearance"><div><div class="name">Piece Set & Color Theme</div><div class="summary" id="appearanceSummary">Chesscases · Blue</div></div><div>›</div></div>
+  <div class="settingRow"><div><div class="name">Show board coordinates</div><div class="summary">Show file and rank labels</div></div><input id="showCoords" type="checkbox"></div>
+
+  <div class="sectionTitle">Other</div>
+  <div class="settingRow"><div><div class="name">Discard variations</div><div class="summary">Kept for DroidFish-style workflow; HumanChessAI currently stores a single main line</div></div><input id="discardVariations" type="checkbox"></div>
+  <div class="settingRow"><div><div class="name">Startup Guide</div><div class="summary">Show the help screen the next time the app starts</div></div><input id="startupGuide" type="checkbox"></div>
+  <div class="settingRow clickable" id="openBookSettings"><div><div class="name">Opening Book Settings</div><div class="summary">Choose how openings are handled with Maia</div></div><div>›</div></div>
+  <div class="settingRow clickable" id="openPgnSettings"><div><div class="name">PGN Settings</div><div class="summary">Current build exports SAN move text and game metadata</div></div><div>›</div></div>
+
+  <div style="padding:18px"><button id="applySettings" style="width:100%;padding:14px;border:0;border-radius:9px;background:#5dc8be;color:#10201e;font-weight:900">Apply Settings</button></div>
+</section>
+
 <div id="toast" class="toast"></div>
+
 <script>
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const glyph={P:'♙',N:'♘',B:'♗',R:'♖',Q:'♕',K:'♔',p:'♟',n:'♞',b:'♝',r:'♜',q:'♛',k:'♚'};
+const pieceFile={P:'wp.svg',N:'wn.svg',B:'wb.svg',R:'wr.svg',Q:'wq.svg',K:'wk.svg',p:'bp.svg',n:'bn.svg',b:'bb.svg',r:'br.svg',q:'bq.svg',k:'bk.svg'};
+const PIECE_SETS=['chesscases','alfonso','alpha','cburnett','chessicons','chessmonk','freestaunton','kilfiger','leipzig','magnetic','maya','merida','merida_new','metaltops','pirat','regular','wikimedia'];
 const PRESETS={fast:{top_n:3,pv_count:1,pv_plies:4},balanced:{top_n:4,pv_count:2,pv_plies:8},deep:{top_n:5,pv_count:3,pv_plies:12}};
-let data=null, flipped=false, selected=null, analysisOn=true, preds=[], analysisEpoch=0, requestSeq=0, drag=null, busy=false, aiBusy=false;
+const THEMES={
+  original:{name:'Original',dark:'#808080',light:'#bebe5a',selected:'#ff0000',bg:'#292c10',text:'#f7fbc6',move:'#888888',label:'#ff0000',arrows:['#1f1fff','#ff1f1f','#1f1fff','#ff1f1f','#1f1fff']},
+  xboard:{name:'XBoard',dark:'#77a26d',light:'#c8c365',selected:'#ffff00',bg:'#28320c',text:'#effbbc',move:'#6b9262',label:'#ff0000',arrows:['#1f1fff','#ff1f1f','#1f1fff','#ff1f1f','#1f1fff']},
+  blue:{name:'Blue',dark:'#83a5d2',light:'#fffffa',selected:'#3232d1',bg:'#2e2b53',text:'#ffff00',move:'#3333ff',label:'#ff0000',arrows:['#1f1fff','#1fff1f','#1f1fff','#1fff1f','#1f1fff']},
+  grey:{name:'Grey',dark:'#666666',light:'#dddddd',selected:'#ff0000',bg:'#202020',text:'#ffffff',move:'#888888',label:'#ff0000',arrows:['#1f1fff','#ff1f1f','#1f1fff','#ff1f1f','#1f1fff']},
+  scid_default:{name:'Scid Default',dark:'#80a0a0',light:'#d0e0d0',selected:'#ff0000',bg:'#213429',text:'#defbde',move:'#666666',label:'#ff0000',arrows:['#1f1fff','#ff1f1f','#1f1fff','#ff1f1f','#1f1fff']},
+  scid_brown:{name:'Scid Brown',dark:'#b58863',light:'#f0d9b5',selected:'#ff0000',bg:'#40260a',text:'#f7fae3',move:'#666666',label:'#ff0000',arrows:['#1f1fff','#ff1f1f','#1f1fff','#ff1f1f','#1f1fff']},
+  scid_green:{name:'Scid Green',dark:'#769656',light:'#eeeed2',selected:'#ff0000',bg:'#183c21',text:'#dee3ce',move:'#666666',label:'#ff0000',arrows:['#1f1fff','#ff1f1f','#1f1fff','#ff1f1f','#1f1fff']}
+};
+const DEFAULT_PREFS={
+  dragPieces:true,quickMove:false,squareSelection:'full',scrollSpeed:55,invertScroll:false,swipeNav:true,
+  autoScrollMoves:true,autoMoveDelay:250,discardVariations:false,startupGuide:false,showCoords:true,
+  pieceSet:'chesscases',theme:'blue',openingBook:'maia'
+};
+const START_FEN='rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+let prefs=loadPrefs();
+let data=null,flipped=false,selected=null,quickDest=null,analysisOn=true,preds=[],analysisEpoch=0,requestSeq=0,drag=null,busy=false,aiBusy=false;
 const pending=new Map();
-window.__nativeComplete=(id,status,payload)=>{const p=pending.get(id);if(!p)return;pending.delete(id);let body={};try{body=JSON.parse(payload)}catch(_){body={error:payload}}if(status>=200&&status<300)p.resolve(body);else{const e=new Error(body.error||`Request failed (${status})`);e.status=status;p.reject(e)}};
+
+function loadPrefs(){try{return {...DEFAULT_PREFS,...JSON.parse(localStorage.getItem('hcaPrefs')||'{}')}}catch(_){return {...DEFAULT_PREFS}}}
+function savePrefs(){localStorage.setItem('hcaPrefs',JSON.stringify(prefs))}
+function activeTheme(){return THEMES[prefs.theme]||THEMES.blue}
+function applyTheme(){
+  const t=activeTheme(),r=document.documentElement.style;
+  r.setProperty('--bg',t.bg);r.setProperty('--bar',t.bg);r.setProperty('--light',t.light);r.setProperty('--dark',t.dark);
+  r.setProperty('--selected',t.selected);r.setProperty('--text',t.text);r.setProperty('--move',t.text);r.setProperty('--label',t.label);
+  document.body.style.background='#0d0e13';
+}
+applyTheme();
+
+window.__nativeComplete=(id,status,payload)=>{
+  const p=pending.get(id);if(!p)return;pending.delete(id);
+  let body={};try{body=JSON.parse(payload)}catch(_){body={error:payload}}
+  if(status>=200&&status<300)p.resolve(body);else{const e=new Error(body.error||`Request failed (${status})`);e.status=status;p.reject(e)}
+};
 function api(path,body={}){return new Promise((resolve,reject)=>{const id=`r${Date.now()}_${++requestSeq}`;pending.set(id,{resolve,reject});try{AndroidBridge.request(id,path,body.body||'{}')}catch(e){pending.delete(id);reject(e)}})}
-function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800)}
+function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1900)}
+function copyText(text){try{AndroidBridge.copyText(text);toast('Copied')}catch(_){toast('Copy failed')}}
+function clipboardText(){try{return AndroidBridge.clipboardText()||''}catch(_){return ''}}
+
+function openOverlay(id){$('#'+id).classList.add('open')}
+function closeOverlay(id){$('#'+id).classList.remove('open')}
+function closeNav(){closeOverlay('navShade')}
 function sideHuman(){if(!data)return false;const t=data.turn,m=data.game_mode;return m==='analysis'||m==='edit'||m==='two'||(m==='white'&&t==='white')||(m==='black'&&t==='black')}
 function aiTurn(){if(!data||data.game_over)return false;const m=data.game_mode,t=data.turn;return m==='cvc'||(m==='white'&&t==='black')||(m==='black'&&t==='white')}
-function coords(square){const f=square.charCodeAt(0)-97,r=+square[1]-1;const vf=flipped?7-f:f,vr=flipped?r:7-r;return [(vf+.5)*100,(vr+.5)*100]}
-function files(){return flipped?'hgfedcba':'abcdefgh'} function ranks(){return flipped?[1,2,3,4,5,6,7,8]:[8,7,6,5,4,3,2,1]}
-function legalTargets(from){const s=new Set();(data.legal_moves||[]).forEach(u=>{if(u.slice(0,2)===from)s.add(u.slice(2,4))});return s}
-function own(piece){return data.turn==='white'?piece===piece.toUpperCase():piece===piece.toLowerCase()}
-function renderBoard(){const b=$('#board');b.innerHTML='';if(!data)return;const fs=files(),rs=ranks(),targets=selected?legalTargets(selected):new Set();const last=data.last_move||'';for(let row=0;row<8;row++)for(let col=0;col<8;col++){const sq=fs[col]+rs[row],piece=data.pieces?.[sq];const el=document.createElement('div');el.className=`sq ${(row+col)%2?'d':'l'}`;el.dataset.square=sq;if(sq===selected)el.classList.add('sel');if(last&&(sq===last.slice(0,2)||sq===last.slice(2,4)))el.classList.add('last');if(targets.has(sq)){el.classList.add('target');if(piece)el.classList.add('capture')}if(piece){const p=document.createElement('span');p.className='piece';p.textContent=glyph[piece];el.appendChild(p)}if(col===0){const c=document.createElement('span');c.className='coord rank';c.textContent=rs[row];el.appendChild(c)}if(row===7){const c=document.createElement('span');c.className='coord file';c.textContent=fs[col];el.appendChild(c)}el.addEventListener('pointerdown',e=>pointerDown(e,el,sq,piece));b.appendChild(el)}drawArrows()}
-function drawArrows(){const svg=$('#arrows');svg.innerHTML='';if(!analysisOn||!preds.length)return;const colors=['#00ee70','#716cff','#c8c4ff','#50d8ff','#ffbb55'];preds.slice(0,5).forEach((p,i)=>{const [x1,y1]=coords(p.uci.slice(0,2)),[x2,y2]=coords(p.uci.slice(2,4));const dx=x2-x1,dy=y2-y1,len=Math.hypot(dx,dy),ux=dx/len,uy=dy/len,endX=x2-ux*20,endY=y2-uy*20,c=colors[i];const line=document.createElementNS('http://www.w3.org/2000/svg','line');line.setAttribute('x1',x1);line.setAttribute('y1',y1);line.setAttribute('x2',endX);line.setAttribute('y2',endY);line.setAttribute('stroke',c);line.setAttribute('stroke-width',i===0?'10':'7');line.setAttribute('stroke-opacity',i===0?'.9':'.5');line.setAttribute('stroke-linecap','round');svg.appendChild(line);const poly=document.createElementNS('http://www.w3.org/2000/svg','polygon');const px=-uy,py=ux;const pts=[[x2,y2],[endX-ux*18+px*16,endY-uy*18+py*16],[endX-ux*18-px*16,endY-uy*18-py*16]].map(a=>a.join(',')).join(' ');poly.setAttribute('points',pts);poly.setAttribute('fill',c);poly.setAttribute('fill-opacity',i===0?'.9':'.5');svg.appendChild(poly)})}
-function renderHeader(){if(!data)return;const s=data.settings||{};$('#topPlayer').textContent=`${flipped?'White':'Black'} · ${flipped?s.white_elo:s.black_elo}`;$('#bottomPlayer').textContent=`${flipped?'Black':'White'} · ${flipped?s.black_elo:s.white_elo}`;$('#sub').textContent=`Maia3-5M · ${data.predictor_ready?'ready':'loading'}`;const sans=data.san_moves||[];let text='';for(let i=0;i<sans.length;i+=2)text+=`${i/2+1}. ${sans[i]||''} ${sans[i+1]||''}  `;$('#moves').textContent=text||`${data.fullmove}. ${data.turn==='white'?'White':'Black'} to move`;$('#undo').disabled=!data.can_undo;$('#redo').disabled=!data.can_redo;$$('.mode').forEach(x=>x.classList.toggle('on',x.dataset.mode===data.game_mode))}
-function baseAnalysis(){const st=$('#status');$('#pvs').innerHTML='';$('#wdl').textContent='';if(!analysisOn){st.textContent='Analysis off';return}if(data?.predictor_error){st.className='status error';st.textContent=data.predictor_error;return}if(!data?.predictor_ready){st.className='status busy';st.textContent='Loading Maia model';return}if(data.game_over){st.className='status';st.textContent=`Game over · ${data.result||''}`;return}st.className='status';st.textContent=`${data.fullmove}${data.turn==='black'?'...':'.'} ${data.turn==='white'?'White':'Black'} to move`}
-function render(){renderBoard();renderHeader();baseAnalysis();if(analysisOn&&data.predictor_ready&&!data.game_over&&!aiTurn())startAnalysis();else{preds=[];drawArrows();queueAi()}}
+function coords(square){const f=square.charCodeAt(0)-97,r=+square[1]-1;const vf=flipped?7-f:f,vr=flipped?r:7-r;return[(vf+.5)*100,(vr+.5)*100]}
+function files(){return flipped?'hgfedcba':'abcdefgh'}
+function ranks(){return flipped?[1,2,3,4,5,6,7,8]:[8,7,6,5,4,3,2,1]}
+function legalTargets(from){const s=new Set();(data?.legal_moves||[]).forEach(u=>{if(u.slice(0,2)===from)s.add(u.slice(2,4))});return s}
+function own(piece){if(!piece||!data)return false;return data.turn==='white'?piece===piece.toUpperCase():piece===piece.toLowerCase()}
+
+function createPiece(piece){
+  const wrap=document.createElement('span');wrap.className='piece';wrap.dataset.piece=piece;
+  const img=document.createElement('img');img.src=`pieces/${prefs.pieceSet}/${pieceFile[piece]}`;img.alt='';
+  const fb=document.createElement('span');fb.className='fallback';fb.textContent=glyph[piece];
+  img.onerror=()=>{img.style.display='none';fb.style.display='flex'};
+  wrap.append(img,fb);return wrap;
+}
+function renderBoard(){
+  const b=$('#board');b.innerHTML='';if(!data)return;
+  const fs=files(),rs=ranks(),targets=selected?legalTargets(selected):new Set(),last=data.last_move||'';
+  for(let row=0;row<8;row++)for(let col=0;col<8;col++){
+    const sq=fs[col]+rs[row],piece=data.pieces?.[sq],el=document.createElement('div');
+    el.className=`sq ${(row+col)%2?'d':'l'}`;el.dataset.square=sq;
+    if(prefs.squareSelection!=='none'&&sq===selected)el.classList.add('sel');
+    if(sq===quickDest)el.classList.add('quick');
+    if(last&&(sq===last.slice(0,2)||sq===last.slice(2,4)))el.classList.add('last');
+    if(prefs.squareSelection==='full'&&targets.has(sq)){el.classList.add('target');if(piece)el.classList.add('capture')}
+    if(piece)el.appendChild(createPiece(piece));
+    if(prefs.showCoords&&col===0){const c=document.createElement('span');c.className='coord rank';c.textContent=rs[row];el.appendChild(c)}
+    if(prefs.showCoords&&row===7){const c=document.createElement('span');c.className='coord file';c.textContent=fs[col];el.appendChild(c)}
+    el.addEventListener('pointerdown',e=>pointerDown(e,el,sq,piece));
+    b.appendChild(el);
+  }
+  drawArrows();
+}
+function drawArrows(){
+  const svg=$('#arrows');svg.innerHTML='';if(!analysisOn||!preds.length)return;
+  const colors=activeTheme().arrows;
+  preds.slice(0,5).forEach((p,i)=>{
+    const [x1,y1]=coords(p.uci.slice(0,2)),[x2,y2]=coords(p.uci.slice(2,4)),dx=x2-x1,dy=y2-y1,len=Math.hypot(dx,dy)||1,ux=dx/len,uy=dy/len,endX=x2-ux*20,endY=y2-uy*20,c=colors[i%colors.length];
+    const line=document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1',x1);line.setAttribute('y1',y1);line.setAttribute('x2',endX);line.setAttribute('y2',endY);
+    line.setAttribute('stroke',c);line.setAttribute('stroke-width',i===0?'10':'7');line.setAttribute('stroke-opacity',i===0?'.9':'.5');line.setAttribute('stroke-linecap','round');svg.appendChild(line);
+    const poly=document.createElementNS('http://www.w3.org/2000/svg','polygon'),px=-uy,py=ux;
+    const pts=[[x2,y2],[endX-ux*18+px*16,endY-uy*18+py*16],[endX-ux*18-px*16,endY-uy*18-py*16]].map(a=>a.join(',')).join(' ');
+    poly.setAttribute('points',pts);poly.setAttribute('fill',c);poly.setAttribute('fill-opacity',i===0?'.9':'.5');svg.appendChild(poly);
+  });
+}
+function renderHeader(){
+  if(!data)return;const s=data.settings||{};
+  $('#topPlayer').textContent=`${flipped?'White':'Black'} · ${flipped?s.white_elo:s.black_elo}`;
+  $('#bottomPlayer').textContent=`${flipped?'Black':'White'} · ${flipped?s.black_elo:s.white_elo}`;
+  $('#sub').textContent=`Maia3-5M · ${data.predictor_ready?'ready':'loading'}`;
+  const sans=data.san_moves||[];let text='';
+  for(let i=0;i<sans.length;i+=2)text+=`${i/2+1}. ${sans[i]||''} ${sans[i+1]||''}  `;
+  $('#moves').textContent=text||`${data.fullmove}. ${data.turn==='white'?'White':'Black'} to move`;
+  if(prefs.autoScrollMoves){const m=$('#moves');requestAnimationFrame(()=>m.scrollLeft=m.scrollWidth)}
+  $('#undoBtn').disabled=!data.can_undo;$('#redoBtn').disabled=!data.can_redo;
+  $$('.mode').forEach(x=>x.classList.toggle('on',x.dataset.mode===data.game_mode));
+}
+function baseAnalysis(){
+  const st=$('#status');$('#pvs').innerHTML='';$('#wdl').textContent='';
+  if(!analysisOn){st.className='status';st.textContent='Analysis off';return}
+  if(data?.predictor_error){st.className='status error';st.textContent=data.predictor_error;return}
+  if(!data?.predictor_ready){st.className='status busy';st.textContent='Loading Maia model';return}
+  if(data.game_over){st.className='status';st.textContent=`Game over · ${data.result||''}`;return}
+  st.className='status';st.textContent=`${data.fullmove}${data.turn==='black'?'...':'.'} ${data.turn==='white'?'White':'Black'} to move`;
+}
+function render(){
+  renderBoard();renderHeader();baseAnalysis();
+  if(analysisOn&&data.predictor_ready&&!data.game_over&&!aiTurn())startAnalysis();
+  else{preds=[];drawArrows();queueAi()}
+}
 async function refresh(){data=await api('/api/state');render()}
-async function startAnalysis(){const token=++analysisEpoch,g=data.analysis_generation;const st=$('#status');st.className='status busy';st.textContent='Analyzing human moves';try{const q=await api('/api/predictions',{body:JSON.stringify({generation:g})});if(token!==analysisEpoch||g!==data.analysis_generation)return;preds=q.predictions||[];drawArrows();if(preds[0])$('#wdl').textContent=`W/D/L: ${(preds[0].win*100).toFixed(0)} / ${(preds[0].draw*100).toFixed(0)} / ${(preds[0].loss*100).toFixed(0)}`;const cfg=data.settings||{};const pv=await api('/api/pv',{body:JSON.stringify({generation:g,count:cfg.pv_count||1,plies:cfg.pv_plies||4})});if(token!==analysisEpoch||g!==data.analysis_generation)return;$('#pvs').innerHTML='';(pv.lines||[]).forEach(line=>{const d=document.createElement('div');d.className='pv';d.innerHTML=`<span class="pct">${(line.first_probability*100).toFixed(1)}%</span>${line.moves.map(m=>m.san).join(' ')}`;$('#pvs').appendChild(d)});st.className='status';st.textContent=`${data.fullmove}${data.turn==='black'?'...':'.'} ${data.turn==='white'?'White':'Black'} to move`}catch(e){if(e.status!==409){st.className='status error';st.textContent=e.message}}}
-function pointerDown(e,el,sq,piece){if(busy||!sideHuman()||data.game_over)return;drag={id:e.pointerId,el,from:sq,piece,x:e.clientX,y:e.clientY,active:false,ghost:null};try{el.setPointerCapture(e.pointerId)}catch(_){}el.onpointermove=pointerMove;el.onpointerup=pointerUp;el.onpointercancel=pointerCancel}
-function pointerMove(e){if(!drag||e.pointerId!==drag.id)return;if(!drag.active&&drag.piece&&own(drag.piece)&&Math.hypot(e.clientX-drag.x,e.clientY-drag.y)>8){drag.active=true;selected=drag.from;drag.ghost=document.createElement('div');drag.ghost.className='ghost';drag.ghost.textContent=glyph[drag.piece];document.body.appendChild(drag.ghost);renderBoard()}if(drag.active){e.preventDefault();drag.ghost.style.left=e.clientX+'px';drag.ghost.style.top=e.clientY+'px'}}
-async function pointerUp(e){if(!drag||e.pointerId!==drag.id)return;const d=drag;drag=null;d.ghost?.remove();if(d.active){const el=document.elementFromPoint(e.clientX,e.clientY)?.closest('.sq');const to=el?.dataset.square;if(to&&legalTargets(d.from).has(to))await makeMove(d.from,to);else{selected=null;renderBoard()}}else await tapSquare(d.from,d.piece)}function pointerCancel(){drag?.ghost?.remove();drag=null;selected=null;renderBoard()}
-async function tapSquare(sq,piece){if(!sideHuman()||busy)return;if(!selected){if(piece&&own(piece)){selected=sq;renderBoard()}return}if(sq===selected){selected=null;renderBoard();return}if(piece&&own(piece)){selected=sq;renderBoard();return}if(legalTargets(selected).has(sq))await makeMove(selected,sq);else{selected=null;renderBoard()}}
-async function makeMove(from,to){busy=true;analysisEpoch++;try{data=await api('/api/move',{body:JSON.stringify({from,to})});selected=null;preds=[];render()}catch(e){toast(e.message);selected=null;renderBoard()}finally{busy=false}}
-async function action(path){if(busy)return;busy=true;analysisEpoch++;try{data=await api(path,{body:'{}'});selected=null;preds=[];render()}catch(e){toast(e.message)}finally{busy=false}}
-async function queueAi(){if(!aiTurn()||aiBusy||!data.predictor_ready)return;aiBusy=true;setTimeout(async()=>{try{data=await api('/api/ai-move',{body:'{}'});preds=[];render()}catch(e){toast(e.message)}finally{aiBusy=false;if(aiTurn())queueAi()}},100)}
-function openSettings(){const s=data.settings||{};$('#whiteElo').value=s.white_elo||1500;$('#blackElo').value=s.black_elo||1500;$('#topN').value=s.top_n||3;$('#pvCount').value=s.pv_count||1;$('#pvPlies').value=s.pv_plies||4;syncPreset();$('#settingsShade').classList.add('open')}function closeSettings(){$('#settingsShade').classList.remove('open')}
-function presetName(){const n=+$('#topN').value,c=+$('#pvCount').value,p=+$('#pvPlies').value;for(const [k,v] of Object.entries(PRESETS))if(n===v.top_n&&c===v.pv_count&&p===v.pv_plies)return k;return 'custom'}function syncPreset(){$$('.presets button').forEach(b=>b.classList.toggle('on',b.dataset.preset===presetName()))}function setPreset(n){const p=PRESETS[n];$('#topN').value=p.top_n;$('#pvCount').value=p.pv_count;$('#pvPlies').value=p.pv_plies;syncPreset()}
-async function applySettings(){busy=true;analysisEpoch++;try{data=await api('/api/settings',{body:JSON.stringify({white_elo:+$('#whiteElo').value,black_elo:+$('#blackElo').value,top_n:+$('#topN').value,pv_count:+$('#pvCount').value,pv_plies:+$('#pvPlies').value,analysis_profile:presetName()})});closeSettings();render()}catch(e){toast(e.message)}finally{busy=false}}
-async function setMode(m){$('#modeShade').classList.remove('open');analysisEpoch++;try{data=await api('/api/mode',{body:JSON.stringify({mode:m})});render()}catch(e){toast(e.message)}}
-$('#settings').onclick=openSettings;$('#closeSettings').onclick=closeSettings;$('#settingsShade').onclick=e=>{if(e.target.id==='settingsShade')closeSettings()};$('#apply').onclick=applySettings;$$('.presets button').forEach(b=>b.onclick=()=>setPreset(b.dataset.preset));['#topN','#pvCount','#pvPlies'].forEach(x=>$(x).oninput=syncPreset);$('#analysis').onclick=()=>{analysisOn=!analysisOn;$('#analysis').classList.toggle('active',analysisOn);analysisEpoch++;preds=[];render()};$('#flip').onclick=()=>{flipped=!flipped;renderBoard();renderHeader()};$('#mode').onclick=()=>$('#modeShade').classList.add('open');$('#modeShade').onclick=e=>{if(e.target.id==='modeShade')e.currentTarget.classList.remove('open')};$$('.mode').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));$('#undo').onclick=()=>action('/api/undo');$('#redo').onclick=()=>action('/api/redo');
-window.nativeBackPressed=()=>{if($('#modeShade').classList.contains('open')){$('#modeShade').classList.remove('open');return true}if($('#settingsShade').classList.contains('open')){closeSettings();return true}return false};window.onNativeModelReady=()=>refresh().catch(()=>{});
-refresh().catch(e=>{$('#status').className='status error';$('#status').textContent=e.message});
+async function startAnalysis(){
+  const token=++analysisEpoch,g=data.analysis_generation,st=$('#status');st.className='status busy';st.textContent='Analyzing human moves';
+  try{
+    const q=await api('/api/predictions',{body:JSON.stringify({generation:g})});
+    if(token!==analysisEpoch||g!==data.analysis_generation)return;
+    preds=q.predictions||[];drawArrows();
+    if(preds[0])$('#wdl').textContent=`W/D/L: ${(preds[0].win*100).toFixed(0)} / ${(preds[0].draw*100).toFixed(0)} / ${(preds[0].loss*100).toFixed(0)}`;
+    const cfg=data.settings||{},pv=await api('/api/pv',{body:JSON.stringify({generation:g,count:cfg.pv_count||1,plies:cfg.pv_plies||4})});
+    if(token!==analysisEpoch||g!==data.analysis_generation)return;
+    $('#pvs').innerHTML='';
+    (pv.lines||[]).forEach(line=>{const d=document.createElement('div');d.className='pv';d.innerHTML=`<span class="pct">${(line.first_probability*100).toFixed(1)}%</span>${line.moves.map(m=>m.san).join(' ')}`;$('#pvs').appendChild(d)});
+    st.className='status';st.textContent=`${data.fullmove}${data.turn==='black'?'...':'.'} ${data.turn==='white'?'White':'Black'} to move`;
+  }catch(e){if(e.status!==409){st.className='status error';st.textContent=e.message}}
+}
+
+function clearDragVisual(d){try{d?.pieceEl?.remove()}catch(_){}}
+function swipeThreshold(el){
+  const w=el.getBoundingClientRect().width||50,s=Number(prefs.scrollSpeed)||0;
+  return Math.max(18,w*(1.25-0.9*(s/100)));
+}
+function pointerDown(e,el,sq,piece){
+  if(busy||!sideHuman()||data.game_over)return;
+  if(drag){clearDragVisual(drag);drag=null}
+  drag={id:e.pointerId,el,from:sq,piece,x:e.clientX,y:e.clientY,active:false,pieceEl:null,squareSize:0,swipe:false,dx:0,dy:0,canDrag:!!(prefs.dragPieces&&piece&&own(piece))};
+  try{el.setPointerCapture(e.pointerId)}catch(_){}
+  el.onpointermove=pointerMove;el.onpointerup=pointerUp;el.onpointercancel=pointerCancel;
+}
+function pointerMove(e){
+  if(!drag||e.pointerId!==drag.id)return;
+  drag.dx=e.clientX-drag.x;drag.dy=e.clientY-drag.y;
+  const dist=Math.hypot(drag.dx,drag.dy);
+  if(!drag.active&&drag.canDrag&&dist>8){
+    drag.active=true;selected=drag.from;quickDest=null;
+    const sourcePiece=drag.el.querySelector('.piece'),rect=drag.el.getBoundingClientRect();drag.squareSize=rect.width;
+    if(sourcePiece){
+      drag.pieceEl=sourcePiece;document.body.appendChild(sourcePiece);
+      sourcePiece.style.position='fixed';sourcePiece.style.left=(e.clientX-rect.width/2)+'px';sourcePiece.style.top=(e.clientY-rect.height/2)+'px';
+      sourcePiece.style.width=rect.width+'px';sourcePiece.style.height=rect.height+'px';sourcePiece.style.zIndex='100';sourcePiece.style.pointerEvents='none';
+    }
+    if(prefs.squareSelection!=='none'){
+      $$('.sq').forEach(s=>s.classList.remove('sel','target','capture'));
+      const fromEl=document.querySelector(`.sq[data-square="${drag.from}"]`);if(fromEl)fromEl.classList.add('sel');
+      if(prefs.squareSelection==='full'){const ts=legalTargets(drag.from);$$('.sq').forEach(s=>{if(ts.has(s.dataset.square)){s.classList.add('target');if(data.pieces?.[s.dataset.square])s.classList.add('capture')}})}
+    }
+  }
+  if(drag.active&&drag.pieceEl){
+    e.preventDefault();const s=drag.squareSize||drag.el.getBoundingClientRect().width;drag.pieceEl.style.left=(e.clientX-s/2)+'px';drag.pieceEl.style.top=(e.clientY-s/2)+'px';return;
+  }
+  if(prefs.swipeNav&&!drag.canDrag&&Math.abs(drag.dx)>swipeThreshold(drag.el)&&Math.abs(drag.dx)>Math.abs(drag.dy)*1.25){drag.swipe=true;e.preventDefault()}
+}
+async function pointerUp(e){
+  if(!drag||e.pointerId!==drag.id)return;
+  const d=drag;drag=null;try{d.el.releasePointerCapture(e.pointerId)}catch(_){}
+  clearDragVisual(d);
+  if(d.active){
+    const hit=document.elementFromPoint(e.clientX,e.clientY),sqEl=hit?.closest?.('.sq'),to=sqEl?.dataset?.square;
+    if(to&&legalTargets(d.from).has(to))await makeMove(d.from,to);else{selected=null;renderBoard()}
+    return;
+  }
+  if(d.swipe){
+    selected=null;quickDest=null;
+    const right=d.dx>0;let forward=right;if(prefs.invertScroll)forward=!forward;
+    await action(forward?'/api/redo':'/api/undo');return;
+  }
+  await tapSquare(d.from,d.piece);
+}
+function pointerCancel(){
+  const d=drag;drag=null;clearDragVisual(d);selected=null;quickDest=null;renderBoard();
+}
+window.addEventListener('blur',()=>{if(drag)pointerCancel()});
+
+async function tapSquare(sq,piece){
+  if(!sideHuman()||busy)return;
+  if(prefs.quickMove&&quickDest&&piece&&own(piece)){
+    const dest=quickDest;quickDest=null;
+    if(legalTargets(sq).has(dest)){selected=null;await makeMove(sq,dest);return}
+  }
+  if(!selected){
+    if(piece&&own(piece)){selected=sq;quickDest=null;renderBoard();return}
+    if(prefs.quickMove){quickDest=sq;renderBoard()}
+    return;
+  }
+  if(sq===selected){selected=null;quickDest=null;renderBoard();return}
+  if(piece&&own(piece)){selected=sq;quickDest=null;renderBoard();return}
+  if(legalTargets(selected).has(sq)){const from=selected;selected=null;quickDest=null;await makeMove(from,sq)}
+  else{selected=null;quickDest=prefs.quickMove?sq:null;renderBoard()}
+}
+async function makeMove(from,to){
+  busy=true;analysisEpoch++;
+  try{data=await api('/api/move',{body:JSON.stringify({from,to})});selected=null;quickDest=null;preds=[];render()}
+  catch(e){toast(e.message);selected=null;quickDest=null;renderBoard()}
+  finally{busy=false}
+}
+async function action(path){
+  if(busy)return;busy=true;analysisEpoch++;
+  try{data=await api(path,{body:'{}'});selected=null;quickDest=null;preds=[];render()}
+  catch(e){toast(e.message)}
+  finally{busy=false}
+}
+async function loadFen(fen){
+  if(!fen?.trim())return;
+  busy=true;analysisEpoch++;
+  try{data=await api('/api/load-fen',{body:JSON.stringify({fen:fen.trim()})});selected=null;quickDest=null;preds=[];closeOverlay('editShade');closeOverlay('fileShade');render();toast('Position loaded')}
+  catch(e){toast(e.message)}
+  finally{busy=false}
+}
+async function queueAi(){
+  if(!aiTurn()||aiBusy||!data.predictor_ready)return;
+  aiBusy=true;
+  setTimeout(async()=>{try{data=await api('/api/ai-move',{body:'{}'});preds=[];render()}catch(e){toast(e.message)}finally{aiBusy=false;if(aiTurn())queueAi()}},Number(prefs.autoMoveDelay)||250);
+}
+async function setMode(m){
+  closeOverlay('modeShade');analysisEpoch++;
+  try{data=await api('/api/mode',{body:JSON.stringify({mode:m})});render()}catch(e){toast(e.message)}
+}
+function buildPgn(){
+  if(!data)return'';
+  const result=data.result||'*',s=data.settings||{},tags=[
+    '[Event "HumanChessAI"]','[Site "Android"]',`[WhiteElo "${s.white_elo||1500}"]`,`[BlackElo "${s.black_elo||1500}"]`,`[Result "${result}"]`
+  ];
+  if(data.fen&&data.fen!==START_FEN){tags.push('[SetUp "1"]',`[FEN "${data.fen.replace(/"/g,'')}"]`)}
+  const sans=data.san_moves||[];let movetext='';
+  for(let i=0;i<sans.length;i+=2)movetext+=`${i/2+1}. ${sans[i]||''}${sans[i+1]?' '+sans[i+1]:''} `;
+  return tags.join('\n')+'\n\n'+movetext+result;
+}
+
+function syncThemeUi(){
+  $('#themeList').innerHTML='';
+  Object.entries(THEMES).forEach(([key,t])=>{
+    const b=document.createElement('button');b.className='action choice'+(prefs.theme===key?' on':'');b.dataset.theme=key;
+    b.innerHTML=`<span class="swatch"><i style="background:${t.light}"></i><i style="background:${t.dark}"></i></span>${t.name}`;
+    b.onclick=()=>{prefs.theme=key;savePrefs();applyTheme();syncThemeUi();renderBoard();renderHeader();updateAppearanceSummary()};
+    $('#themeList').appendChild(b);
+  });
+  const sel=$('#pieceSetSelect');sel.innerHTML='';
+  PIECE_SETS.forEach(set=>{const o=document.createElement('option');o.value=set;o.textContent=set.replace('_',' ');sel.appendChild(o)});sel.value=prefs.pieceSet;
+  renderPiecePreview();
+}
+function renderPiecePreview(){
+  const p=$('#piecePreview');p.innerHTML='';
+  ['K','Q','R','B','N','P','k','q','r','b','n','p'].forEach(pc=>{
+    const img=document.createElement('img');img.src=`pieces/${prefs.pieceSet}/${pieceFile[pc]}`;img.alt=glyph[pc];p.appendChild(img);
+  });
+}
+function updateAppearanceSummary(){$('#appearanceSummary').textContent=`${prefs.pieceSet.replace('_',' ')} · ${activeTheme().name}`}
+
+function openSettings(){
+  const s=data?.settings||{};
+  $('#whiteElo').value=s.white_elo||1500;$('#blackElo').value=s.black_elo||1500;$('#topN').value=s.top_n||3;$('#pvCount').value=s.pv_count||1;$('#pvPlies').value=s.pv_plies||4;$('#analysisProfile').value=s.analysis_profile||'fast';
+  $('#quickMove').checked=prefs.quickMove;$('#squareSelection').value=prefs.squareSelection;$('#dragPieces').checked=prefs.dragPieces;$('#scrollSpeed').value=prefs.scrollSpeed;$('#invertScroll').checked=prefs.invertScroll;
+  $('#swipeNav').checked=prefs.swipeNav;$('#autoScrollMoves').checked=prefs.autoScrollMoves;$('#autoMoveDelay').value=String(prefs.autoMoveDelay);$('#showCoords').checked=prefs.showCoords;
+  $('#discardVariations').checked=prefs.discardVariations;$('#startupGuide').checked=prefs.startupGuide;updateAppearanceSummary();$('#settingsPage').classList.add('open');
+}
+function closeSettings(){$('#settingsPage').classList.remove('open')}
+async function applySettings(){
+  prefs.quickMove=$('#quickMove').checked;prefs.squareSelection=$('#squareSelection').value;prefs.dragPieces=$('#dragPieces').checked;prefs.scrollSpeed=+$('#scrollSpeed').value;prefs.invertScroll=$('#invertScroll').checked;
+  prefs.swipeNav=$('#swipeNav').checked;prefs.autoScrollMoves=$('#autoScrollMoves').checked;prefs.autoMoveDelay=+$('#autoMoveDelay').value;prefs.showCoords=$('#showCoords').checked;prefs.discardVariations=$('#discardVariations').checked;prefs.startupGuide=$('#startupGuide').checked;savePrefs();
+  let profile=$('#analysisProfile').value;
+  if(PRESETS[profile]){$('#topN').value=PRESETS[profile].top_n;$('#pvCount').value=PRESETS[profile].pv_count;$('#pvPlies').value=PRESETS[profile].pv_plies}
+  busy=true;analysisEpoch++;
+  try{
+    data=await api('/api/settings',{body:JSON.stringify({white_elo:+$('#whiteElo').value,black_elo:+$('#blackElo').value,top_n:+$('#topN').value,pv_count:+$('#pvCount').value,pv_plies:+$('#pvPlies').value,analysis_profile:profile})});
+    closeSettings();render();toast('Settings saved');
+  }catch(e){toast(e.message)}
+  finally{busy=false}
+}
+
+$('#menuBtn').onclick=()=>openOverlay('navShade');
+$('#navShade').onclick=e=>{if(e.target.id==='navShade')closeNav()};
+$$('.navItem').forEach(b=>b.onclick=async()=>{
+  const what=b.dataset.nav;closeNav();
+  if(what==='new')await action('/api/reset');
+  if(what==='edit'){$('#fenEditor').value=data?.fen||START_FEN;openOverlay('editShade')}
+  if(what==='file')openOverlay('fileShade');
+  if(what==='book'){syncBookUi();openOverlay('bookShade')}
+  if(what==='theme'){syncThemeUi();openOverlay('themeShade')}
+  if(what==='settings')openSettings();
+  if(what==='about')openOverlay('aboutShade');
+});
+$$('[data-close]').forEach(b=>b.onclick=()=>closeOverlay(b.dataset.close));
+$$('.dialogShade').forEach(s=>s.addEventListener('click',e=>{if(e.target===s)s.classList.remove('open')}));
+
+$('#settingsBtn').onclick=openSettings;$('#settingsBack').onclick=closeSettings;$('#applySettings').onclick=applySettings;
+$('#analysisBtn').onclick=()=>{analysisOn=!analysisOn;$('#analysisBtn').classList.toggle('active',analysisOn);analysisEpoch++;preds=[];render()};
+$('#flipBtn').onclick=()=>{flipped=!flipped;renderBoard();renderHeader()};
+$('#modeBtn').onclick=()=>openOverlay('modeShade');
+$$('.mode').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
+$('#undoBtn').onclick=()=>action('/api/undo');$('#redoBtn').onclick=()=>action('/api/redo');
+
+$('#copyFen').onclick=()=>data&&copyText(data.fen);
+$('#copyPgn').onclick=()=>copyText(buildPgn());
+$('#pasteFen').onclick=()=>{const v=clipboardText();if(v)loadFen(v);else toast('Clipboard is empty')};
+$('#fileNew').onclick=async()=>{closeOverlay('fileShade');await action('/api/reset')};
+$('#applyFen').onclick=()=>loadFen($('#fenEditor').value);
+$('#editStart').onclick=()=>{$('#fenEditor').value=START_FEN};
+$('#pieceSetSelect').onchange=e=>{prefs.pieceSet=e.target.value;savePrefs();renderPiecePreview();renderBoard();updateAppearanceSummary()};
+$('#openAppearance').onclick=()=>{syncThemeUi();openOverlay('themeShade')};
+$('#openBookSettings').onclick=()=>{syncBookUi();openOverlay('bookShade')};
+$('#openPgnSettings').onclick=()=>{closeSettings();openOverlay('fileShade')};
+
+function syncBookUi(){$$('[data-book]').forEach(b=>b.classList.toggle('on',b.dataset.book===prefs.openingBook))}
+$$('[data-book]').forEach(b=>b.onclick=()=>{prefs.openingBook=b.dataset.book;savePrefs();syncBookUi();toast('Opening preference saved')});
+
+$('#analysisProfile').onchange=e=>{const p=PRESETS[e.target.value];if(p){$('#topN').value=p.top_n;$('#pvCount').value=p.pv_count;$('#pvPlies').value=p.pv_plies}};
+['topN','pvCount','pvPlies'].forEach(id=>$('#'+id).oninput=()=>{$('#analysisProfile').value='custom'});
+
+window.nativeBackPressed=()=>{
+  if($('#settingsPage').classList.contains('open')){closeSettings();return true}
+  for(const id of ['aboutShade','themeShade','bookShade','editShade','fileShade','modeShade'])if($('#'+id).classList.contains('open')){closeOverlay(id);return true}
+  if($('#navShade').classList.contains('open')){closeNav();return true}
+  return false;
+};
+window.onNativeModelReady=()=>refresh().catch(()=>{});
+
+syncThemeUi();
+refresh().then(()=>{if(prefs.startupGuide)openOverlay('aboutShade')}).catch(e=>{$('#status').className='status error';$('#status').textContent=e.message});
 </script>
-</body></html>
+</body>
+</html>
