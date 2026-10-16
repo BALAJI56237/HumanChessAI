@@ -17,6 +17,29 @@ jobs:
       - name: Checkout HumanChessAI
         uses: actions/checkout@v4
 
+      - name: Bundle DroidFish piece sets and license
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p app/src/main/assets/pieces app/src/main/assets/licenses
+          sets=(
+            chesscases alfonso alpha cburnett chessicons chessmonk freestaunton
+            kilfiger leipzig magnetic maya merida merida_new metaltops pirat regular wikimedia
+          )
+          for set in "${sets[@]}"; do
+            url="https://raw.githubusercontent.com/peterosterlund2/droidfish/master/DroidFishApp/src/main/assets/pieces/${set}.zip"
+            curl -fL --retry 3 "$url" -o "/tmp/${set}.zip"
+            mkdir -p "app/src/main/assets/pieces/${set}"
+            unzip -q -j "/tmp/${set}.zip" -d "app/src/main/assets/pieces/${set}"
+            test -s "app/src/main/assets/pieces/${set}/wk.svg"
+            test -s "app/src/main/assets/pieces/${set}/bp.svg"
+          done
+          curl -fL --retry 3 \
+            https://raw.githubusercontent.com/peterosterlund2/droidfish/master/COPYING \
+            -o app/src/main/assets/licenses/DROIDFISH_GPLv3.txt
+          echo "Bundled piece sets:"
+          find app/src/main/assets/pieces -maxdepth 1 -mindepth 1 -type d -printf '%f\n' | sort
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
