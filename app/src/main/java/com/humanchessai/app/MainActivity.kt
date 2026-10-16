@@ -3,6 +3,7 @@ package com.humanchessai.app
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.os.Bundle
+import android.view.MotionEvent
 import android.view.View
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
@@ -17,7 +18,10 @@ class MainActivity : Activity() {
     private lateinit var controller: HumanChessController
     private lateinit var bridge: NativeBridge
 
-    @SuppressLint("SetJavaScriptEnabled")
+    private val clearDragGhostsScript =
+        "document.querySelectorAll('.ghost').forEach(function(e){e.remove();});"
+
+    @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -36,6 +40,19 @@ class MainActivity : Activity() {
         webView.webChromeClient = WebChromeClient()
         webView.webViewClient = WebViewClient()
         webView.overScrollMode = View.OVER_SCROLL_NEVER
+
+        // The board uses a floating HTML element while dragging a piece. Android
+        // WebView can occasionally lose the JavaScript pointer-up event after the
+        // board is re-rendered mid-drag, leaving that temporary piece on screen.
+        // Always clean stale drag ghosts at the native touch boundary as a safety net.
+        webView.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN,
+                MotionEvent.ACTION_UP,
+                MotionEvent.ACTION_CANCEL -> webView.evaluateJavascript(clearDragGhostsScript, null)
+            }
+            false
+        }
 
         controller = HumanChessController(applicationContext) {
             runOnUiThread {
