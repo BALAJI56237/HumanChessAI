@@ -22,9 +22,8 @@ class MainActivity : Activity() {
 
     /**
      * DroidFish-style compact chrome. Full screen remains board-first, while
-     * short Android split-screen panes automatically shrink the title strip,
-     * move strip, controls and analysis text and cap the board just enough to
-     * keep Maia output visible below it.
+     * short Android split-screen panes shrink the surrounding controls but keep
+     * the board large enough to be useful. Maia output remains visible below.
      */
     private val compactDroidFishUiPatch = """
         (function () {
@@ -98,9 +97,9 @@ class MainActivity : Activity() {
             .dialog .closeBtn { margin-top: 10px !important; padding: 9px !important; font-size: 14px !important; }
             .choice small, .helpText { font-size: 11px !important; }
 
-            /* Split-screen mode. DroidFish reduces its usable board area in a
-               short pane, which leaves room for the engine text. Do the same
-               here without changing normal full-screen board size. */
+            /* Split-screen: keep the compact DroidFish chrome, but keep the
+               chessboard around 80% of the pane width instead of collapsing it
+               to half-width. */
             @media (max-height: 1150px) {
               html, body { overflow-y: hidden !important; }
               .app {
@@ -121,7 +120,7 @@ class MainActivity : Activity() {
               .title small { font-size: 6.5px !important; margin-top: 0 !important; }
 
               .boardWrap {
-                width: min(100%, calc(100dvh - 278px)) !important;
+                width: min(82vw, calc(100dvh - 190px)) !important;
                 max-width: 100% !important;
                 aspect-ratio: 1 !important;
                 margin: 0 auto !important;
@@ -150,7 +149,7 @@ class MainActivity : Activity() {
 
               .analysis {
                 min-height: 0 !important;
-                height: calc(100dvh - 83px - min(100vw, calc(100dvh - 278px))) !important;
+                height: calc(100dvh - 83px - min(82vw, calc(100dvh - 190px))) !important;
                 overflow-y: auto !important;
                 padding: 1px 4px 5px !important;
                 font: 9.5px/1.23 monospace !important;
@@ -168,12 +167,16 @@ class MainActivity : Activity() {
               .title { font-size: 9px !important; }
               .title small { display: none !important; }
 
-              .boardWrap { width: min(100%, calc(100dvh - 238px)) !important; }
+              .boardWrap { width: min(78vw, calc(100dvh - 185px)) !important; }
               .moves { height: 18px !important; font-size: 9px !important; }
               .tools { height: 31px !important; }
               .tool { width: 27px !important; height: 27px !important; min-width: 27px !important; font-size: 14px !important; }
               .tool.nav { font-size: 18px !important; }
-              .analysis { font-size: 9px !important; line-height: 1.18 !important; }
+              .analysis {
+                height: calc(100dvh - 76px - min(78vw, calc(100dvh - 185px))) !important;
+                font-size: 9px !important;
+                line-height: 1.18 !important;
+              }
             }
           `;
           document.head.appendChild(style);
