@@ -1,0 +1,8 @@
+.gradle/
+.idea/
+local.properties
+**/build/
+app/src/main/assets/models/*.onnx
+app/src/main/assets/models/*.onnx.data
+.ci/
+*.iml
