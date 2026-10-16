@@ -21,12 +21,10 @@ class MainActivity : Activity() {
     private lateinit var bridge: NativeBridge
 
     /**
-     * Keep the chess board itself full-size, but make the surrounding UI use
-     * the compact proportions of DroidFish: a short player/title strip,
-     * narrow move list, small toolbar buttons and small engine text.
-     *
-     * This is injected as a final style block so it also overrides the mobile
-     * media rules in the bundled HTML without touching the board renderer.
+     * DroidFish-style compact chrome. Full screen remains board-first, while
+     * short Android split-screen panes automatically shrink the title strip,
+     * move strip, controls and analysis text and cap the board just enough to
+     * keep Maia output visible below it.
      */
     private val compactDroidFishUiPatch = """
         (function () {
@@ -79,62 +77,103 @@ class MainActivity : Activity() {
               box-shadow: 0 1px 2px #0005 !important;
               padding: 0 !important;
             }
-            .tool.nav {
-              font-size: 25px !important;
-            }
+            .tool.nav { font-size: 25px !important; }
 
             .analysis {
               min-height: 150px !important;
               padding: 2px 4px 12px !important;
               font: 11px/1.32 monospace !important;
             }
-            .status {
-              min-height: 16px !important;
-            }
-            .pv {
-              margin: 3px 0 !important;
-            }
-            .pct {
-              min-width: 43px !important;
-              font-size: 11px !important;
-            }
-            .wdl {
-              margin-top: 4px !important;
-              font-size: 11px !important;
+            .status { min-height: 16px !important; }
+            .pv { margin: 3px 0 !important; }
+            .pct { min-width: 43px !important; font-size: 11px !important; }
+            .wdl { margin-top: 4px !important; font-size: 11px !important; }
+
+            .navDrawer { width: min(72vw, 330px) !important; }
+            .navItem { padding: 14px 16px !important; font-size: 16px !important; }
+            .dialog { width: min(90vw, 420px) !important; border-radius: 16px !important; padding: 14px !important; }
+            .dialog h2 { font-size: 18px !important; margin: 1px 0 10px !important; }
+            .dialog h3 { font-size: 11px !important; margin: 12px 0 6px !important; }
+            .dialog .action { padding: 11px 6px !important; font-size: 15px !important; }
+            .dialog .closeBtn { margin-top: 10px !important; padding: 9px !important; font-size: 14px !important; }
+            .choice small, .helpText { font-size: 11px !important; }
+
+            /* Split-screen mode. DroidFish reduces its usable board area in a
+               short pane, which leaves room for the engine text. Do the same
+               here without changing normal full-screen board size. */
+            @media (max-height: 1150px) {
+              html, body { overflow-y: hidden !important; }
+              .app {
+                min-height: 100dvh !important;
+                height: 100dvh !important;
+                overflow: hidden !important;
+              }
+
+              .topbar {
+                height: 30px !important;
+                grid-template-columns: 25px 1fr auto 1fr !important;
+                padding: 0 2px !important;
+                gap: 1px !important;
+              }
+              .hamb { width: 23px !important; height: 23px !important; font-size: 17px !important; }
+              .player { font-size: 9px !important; }
+              .title { font-size: 10px !important; }
+              .title small { font-size: 6.5px !important; margin-top: 0 !important; }
+
+              .boardWrap {
+                width: min(100%, calc(100dvh - 278px)) !important;
+                max-width: 100% !important;
+                aspect-ratio: 1 !important;
+                margin: 0 auto !important;
+              }
+              .coord { font-size: 8px !important; }
+
+              .moves {
+                height: 19px !important;
+                padding: 2px 3px !important;
+                font: 9.5px/15px monospace !important;
+              }
+
+              .tools {
+                height: 34px !important;
+                gap: 2px !important;
+                padding: 1px 4px !important;
+              }
+              .tool {
+                width: 30px !important;
+                height: 30px !important;
+                min-width: 30px !important;
+                border-radius: 5px !important;
+                font-size: 16px !important;
+              }
+              .tool.nav { font-size: 20px !important; }
+
+              .analysis {
+                min-height: 0 !important;
+                height: calc(100dvh - 83px - min(100vw, calc(100dvh - 278px))) !important;
+                overflow-y: auto !important;
+                padding: 1px 4px 5px !important;
+                font: 9.5px/1.23 monospace !important;
+              }
+              .status { min-height: 13px !important; }
+              .pv { margin: 1px 0 !important; }
+              .pct { min-width: 38px !important; font-size: 9.5px !important; }
+              .wdl { margin-top: 2px !important; font-size: 9.5px !important; }
             }
 
-            .navDrawer {
-              width: min(72vw, 330px) !important;
-            }
-            .navItem {
-              padding: 14px 16px !important;
-              font-size: 16px !important;
-            }
-            .dialog {
-              width: min(90vw, 420px) !important;
-              border-radius: 16px !important;
-              padding: 14px !important;
-            }
-            .dialog h2 {
-              font-size: 18px !important;
-              margin: 1px 0 10px !important;
-            }
-            .dialog h3 {
-              font-size: 11px !important;
-              margin: 12px 0 6px !important;
-            }
-            .dialog .action {
-              padding: 11px 6px !important;
-              font-size: 15px !important;
-            }
-            .dialog .closeBtn {
-              margin-top: 10px !important;
-              padding: 9px !important;
-              font-size: 14px !important;
-            }
-            .choice small,
-            .helpText {
-              font-size: 11px !important;
+            @media (max-height: 900px) {
+              .topbar { height: 27px !important; }
+              .hamb { width: 21px !important; height: 21px !important; font-size: 15px !important; }
+              .player { font-size: 8px !important; }
+              .title { font-size: 9px !important; }
+              .title small { display: none !important; }
+
+              .boardWrap { width: min(100%, calc(100dvh - 238px)) !important; }
+              .moves { height: 18px !important; font-size: 9px !important; }
+              .tools { height: 31px !important; }
+              .tool { width: 27px !important; height: 27px !important; min-width: 27px !important; font-size: 14px !important; }
+              .tool.nav { font-size: 18px !important; }
+              .analysis { font-size: 9px !important; line-height: 1.18 !important; }
             }
           `;
           document.head.appendChild(style);
