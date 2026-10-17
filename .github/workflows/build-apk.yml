@@ -17,11 +17,11 @@ jobs:
       - name: Checkout HumanChessAI
         uses: actions/checkout@v4
 
-      - name: Bundle DroidFish piece sets and license
+      - name: Bundle DroidFish piece sets, toolbar icons and license
         shell: bash
         run: |
           set -euxo pipefail
-          mkdir -p app/src/main/assets/pieces app/src/main/assets/licenses
+          mkdir -p app/src/main/assets/pieces app/src/main/assets/licenses app/src/main/assets/ui
           sets=(
             chesscases alfonso alpha cburnett chessicons chessmonk freestaunton
             kilfiger leipzig magnetic maya merida merida_new metaltops pirat regular wikimedia
@@ -34,11 +34,80 @@ jobs:
             test -s "app/src/main/assets/pieces/${set}/wk.svg"
             test -s "app/src/main/assets/pieces/${set}/bp.svg"
           done
+
+          # DroidFish uses 36x32 SVG artwork for the six buttons beside the board.
+          for icon in open_file analyze flip mode left right; do
+            curl -fL --retry 3 \
+              "https://raw.githubusercontent.com/peterosterlund2/droidfish/master/DroidFishApp/src/main/res/raw/${icon}.svg" \
+              -o "app/src/main/assets/ui/${icon}.svg"
+            test -s "app/src/main/assets/ui/${icon}.svg"
+          done
+
           curl -fL --retry 3 \
             https://raw.githubusercontent.com/peterosterlund2/droidfish/master/COPYING \
             -o app/src/main/assets/licenses/DROIDFISH_GPLv3.txt
+
+          # Match the DroidFish default toolbar exactly: file, analysis, flip,
+          # game mode, previous position, next position. Settings stays in the drawer.
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('app/src/main/assets/index.html')
+          s = p.read_text(encoding='utf-8')
+
+          replacements = {
+              '<button id="settingsBtn" class="tool" aria-label="Settings">⚙</button>':
+                  '<button id="settingsBtn" class="tool dfIconButton" aria-label="File"><img class="dfToolbarIcon" src="ui/open_file.svg" alt=""></button>',
+              '<button id="analysisBtn" class="tool active" aria-label="Analysis">💡</button>':
+                  '<button id="analysisBtn" class="tool active dfIconButton" aria-label="Analysis"><img class="dfToolbarIcon" src="ui/analyze.svg" alt=""></button>',
+              '<button id="flipBtn" class="tool" aria-label="Flip board">↻</button>':
+                  '<button id="flipBtn" class="tool dfIconButton" aria-label="Flip board"><img class="dfToolbarIcon" src="ui/flip.svg" alt=""></button>',
+              '<button id="modeBtn" class="tool" aria-label="Game mode">M</button>':
+                  '<button id="modeBtn" class="tool dfIconButton" aria-label="Game mode"><img class="dfToolbarIcon" src="ui/mode.svg" alt=""></button>',
+              '<button id="undoBtn" class="tool nav" aria-label="Previous position">←</button>':
+                  '<button id="undoBtn" class="tool nav dfIconButton" aria-label="Previous position"><img class="dfToolbarIcon" src="ui/left.svg" alt=""></button>',
+              '<button id="redoBtn" class="tool nav" aria-label="Next position">→</button>':
+                  '<button id="redoBtn" class="tool nav dfIconButton" aria-label="Next position"><img class="dfToolbarIcon" src="ui/right.svg" alt=""></button>',
+              "$('#settingsBtn').onclick=openSettings;":
+                  "$('#settingsBtn').onclick=()=>openOverlay('fileShade');",
+          }
+          for old, new in replacements.items():
+              if old not in s:
+                  raise SystemExit(f'Missing expected UI fragment: {old}')
+              s = s.replace(old, new, 1)
+
+          css = '''
+          /* Exact DroidFish 36x32 SVG toolbar artwork. */
+          .tools .tool.dfIconButton{
+            background:transparent !important;
+            border:0 !important;
+            border-radius:0 !important;
+            box-shadow:none !important;
+            padding:0 !important;
+            overflow:hidden !important;
+          }
+          .tools .tool.dfIconButton .dfToolbarIcon{
+            display:block !important;
+            width:36px !important;
+            height:32px !important;
+            max-width:none !important;
+            max-height:none !important;
+            object-fit:fill !important;
+            pointer-events:none !important;
+          }
+          .tools .tool.dfIconButton:disabled .dfToolbarIcon{opacity:.42 !important;}
+          '''
+          marker = '</style>'
+          if marker not in s:
+              raise SystemExit('Could not find </style> in index.html')
+          s = s.replace(marker, css + '\n' + marker, 1)
+          p.write_text(s, encoding='utf-8')
+          PY
+
           echo "Bundled piece sets:"
           find app/src/main/assets/pieces -maxdepth 1 -mindepth 1 -type d -printf '%f\n' | sort
+          echo "DroidFish toolbar icons:"
+          ls -lh app/src/main/assets/ui/
 
       - name: Set up Python
         uses: actions/setup-python@v5
