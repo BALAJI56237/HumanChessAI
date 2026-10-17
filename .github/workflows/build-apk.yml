@@ -6,7 +6,7 @@ on:
     branches: [ main ]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -169,3 +169,27 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish permanent GitHub APK download
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          cp app/build/outputs/apk/debug/app-debug.apk HumanChessAI.apk
+
+          if gh release view latest-beta >/dev/null 2>&1; then
+            gh release upload latest-beta HumanChessAI.apk --clobber
+            gh release edit latest-beta \
+              --title "HumanChessAI — Latest Build" \
+              --notes "Latest installable Android build from the main branch. Uses Maia3 for human-like move prediction. Source code is available in this repository."
+          else
+            gh release create latest-beta HumanChessAI.apk \
+              --target "$GITHUB_SHA" \
+              --title "HumanChessAI — Latest Build" \
+              --notes "Latest installable Android build from the main branch. Uses Maia3 for human-like move prediction. Source code is available in this repository."
+          fi
+
+          echo "Permanent APK URL:"
+          echo "https://github.com/BALAJI56237/HumanChessAI/releases/download/latest-beta/HumanChessAI.apk"
