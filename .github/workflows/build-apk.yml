@@ -109,6 +109,158 @@ jobs:
           echo "DroidFish toolbar icons:"
           ls -lh app/src/main/assets/ui/
 
+      - name: Harden pawn promotion selection
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          # Backend guard: a human promotion must always include an explicit
+          # q/r/b/n choice. Never silently fall back to queen or any other piece.
+          controller = Path('app/src/main/java/com/humanchessai/app/HumanChessController.kt')
+          c = controller.read_text(encoding='utf-8')
+          old_controller = '''    private fun playLocked(from: String, to: String, promotion: String?, clearRedo: Boolean) {
+              val raw = from + to + (promotion ?: "")
+              var match = legalMoveByUci(board, raw)
+              if (match == null && promotion == null) {
+                  match = legalMoveByUci(board, "${from}${to}q")
+              }
+              if (match == null) throw IllegalArgumentException("Illegal move")
+              val uci = board.toUci(match)
+              board.doMove(match)
+              moveHistory.add(uci)
+              if (clearRedo) redoHistory.clear()
+          }
+          '''
+          new_controller = '''    private fun playLocked(from: String, to: String, promotion: String?, clearRedo: Boolean) {
+              val base = from + to
+              val promotionRequired = board.legalMoves().any { move ->
+                  val uci = board.toUci(move)
+                  uci.length >= 5 &&
+                      uci.substring(0, 4).equals(base, ignoreCase = true) &&
+                      uci[4].lowercaseChar() in "qrbn"
+              }
+              if (promotionRequired && promotion == null) {
+                  throw IllegalArgumentException("Choose a promotion piece")
+              }
+
+              val raw = base + (promotion ?: "")
+              val match = legalMoveByUci(board, raw)
+                  ?: throw IllegalArgumentException("Illegal move")
+              val uci = board.toUci(match)
+              board.doMove(match)
+              moveHistory.add(uci)
+              if (clearRedo) redoHistory.clear()
+          }
+          '''
+          if old_controller not in c:
+              raise SystemExit('Could not find promotion fallback in HumanChessController.kt')
+          controller.write_text(c.replace(old_controller, new_controller, 1), encoding='utf-8')
+
+          # UI guard: Android WebView can synthesize a click after the finger is
+          # released on the last-rank square. If the promotion dialog appears in
+          # the same event cycle, that click can land on Queen/Rook/Bishop/Knight
+          # without a deliberate second tap. Keep the choices disabled briefly
+          # after opening, then require a fresh tap exactly like DroidFish.
+          activity = Path('app/src/main/java/com/humanchessai/app/MainActivity.kt')
+          a = activity.read_text(encoding='utf-8')
+
+          old_css = '''            .hcaPromotionItem {
+              width: 100% !important;
+          '''
+          new_css = '''            .hcaPromotionItem {
+              pointer-events: none !important;
+              width: 100% !important;
+          '''
+          if old_css not in a:
+              raise SystemExit('Could not find promotion item CSS')
+          a = a.replace(old_css, new_css, 1)
+
+          old_css_end = '''            .hcaPromotionItem:last-child { border-bottom: 0 !important; }
+            .hcaPromotionItem:active { background: #ffffff18 !important; }
+          '''
+          new_css_end = '''            #hcaPromotionShade.open.ready .hcaPromotionItem { pointer-events: auto !important; }
+            .hcaPromotionItem:last-child { border-bottom: 0 !important; }
+            .hcaPromotionItem:active { background: #ffffff18 !important; }
+          '''
+          if old_css_end not in a:
+              raise SystemExit('Could not find promotion item CSS tail')
+          a = a.replace(old_css_end, new_css_end, 1)
+
+          old_resolver = '''          var promotionResolver = null;
+          function closePromotion(choice) {
+            promotionShade.classList.remove('open');
+          '''
+          new_resolver = '''          var promotionResolver = null;
+          var promotionOpenedAt = 0;
+          var promotionReadyTimer = null;
+          function closePromotion(choice) {
+            promotionShade.classList.remove('open');
+            promotionShade.classList.remove('ready');
+            if (promotionReadyTimer) {
+              clearTimeout(promotionReadyTimer);
+              promotionReadyTimer = null;
+            }
+          '''
+          if old_resolver not in a:
+              raise SystemExit('Could not find promotion resolver block')
+          a = a.replace(old_resolver, new_resolver, 1)
+
+          old_click = '''                btn.onclick = function() { closePromotion(entry[0]); };
+          '''
+          new_click = '''                btn.onclick = function(ev) {
+                  // Ignore the synthetic click generated by the same touch that
+                  // opened this dialog. A promotion must be a separate tap.
+                  if (performance.now() - promotionOpenedAt < 300) {
+                    if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+                    return;
+                  }
+                  closePromotion(entry[0]);
+                };
+          '''
+          if old_click not in a:
+              raise SystemExit('Could not find promotion button click handler')
+          a = a.replace(old_click, new_click, 1)
+
+          old_open = '''              promotionShade.classList.add('open');
+            });
+          }
+          promotionShade.addEventListener('click', function(e) {
+            if (e.target === promotionShade) closePromotion(null);
+          });
+          '''
+          new_open = '''              promotionOpenedAt = performance.now();
+              promotionShade.classList.remove('ready');
+              promotionShade.classList.add('open');
+              promotionReadyTimer = setTimeout(function() {
+                promotionReadyTimer = null;
+                if (promotionShade.classList.contains('open')) promotionShade.classList.add('ready');
+              }, 300);
+            });
+          }
+          promotionShade.addEventListener('click', function(e) {
+            if (performance.now() - promotionOpenedAt < 300) {
+              e.preventDefault();
+              e.stopPropagation();
+              return;
+            }
+            if (e.target === promotionShade) closePromotion(null);
+          });
+          '''
+          if old_open not in a:
+              raise SystemExit('Could not find promotion dialog open block')
+          a = a.replace(old_open, new_open, 1)
+
+          activity.write_text(a, encoding='utf-8')
+          PY
+
+          # Verify the two protections are present in the exact sources that
+          # Gradle will compile into the APK.
+          grep -F 'throw IllegalArgumentException("Choose a promotion piece")' app/src/main/java/com/humanchessai/app/HumanChessController.kt
+          grep -F "promotionShade.classList.add('ready')" app/src/main/java/com/humanchessai/app/MainActivity.kt
+          grep -F 'pointer-events: none !important' app/src/main/java/com/humanchessai/app/MainActivity.kt
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
