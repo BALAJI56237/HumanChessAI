@@ -1,71 +1,152 @@
-# HumanChessAI
+# HumanChessAI — Human-Like Chess AI for Android
 
-HumanChessAI is a standalone Android chess analysis app focused on **human move prediction** instead of engine-best-move analysis.
+**HumanChessAI** is a free, standalone **human-like chess AI and chess analysis app for Android**. It uses **Maia3-5M** to predict the moves real human chess players are likely to make at a selected Elo, instead of showing only computer-best moves like a traditional chess engine.
 
-It uses the Maia3-5M neural network on-device through ONNX Runtime. After the APK is installed, analysis does not require Termux, Ubuntu, Python, Chrome, a local server, or an internet connection.
+If you are searching for **Human Chess AI**, **HumanChessAI APK**, **human-like chess AI Android**, **Maia chess Android**, **chess move prediction by Elo**, or a **DroidFish-style Maia chess app**, this is the official HumanChessAI project and download page.
 
-## Current features
+## Download HumanChessAI APK
 
-- Maia3-5M human move probabilities
-- White and Black Elo conditioning
-- Human continuation lines instead of Stockfish PVs
-- Candidate arrows directly on the board
-- Fast / Balanced / Deep analysis presets
-- Drag-and-drop and tap-to-move
-- Board flip
-- Back / forward position navigation
-- Analysis Mode
-- Edit/re-play Game
-- Play White
-- Play Black
-- Two Players
-- Computer vs Computer
+### [⬇️ Download the latest HumanChessAI Android APK](https://github.com/BALAJI56237/HumanChessAI/releases/download/latest-beta/HumanChessAI.apk)
+
+Latest release page:
+
+https://github.com/BALAJI56237/HumanChessAI/releases/tag/latest-beta
+
+The APK runs Maia3 directly on the Android device through ONNX Runtime. After installation, chess analysis does **not** require Termux, Ubuntu, Python, Chrome, a local server, or a continuous internet connection.
+
+## What makes HumanChessAI different?
+
+Traditional chess engines try to find the objectively strongest move. HumanChessAI instead asks:
+
+> **What move is a human player at this Elo most likely to play?**
+
+You can set separate White and Black Elo ratings and see Maia's predicted human move probabilities, continuation lines, candidate arrows, and W/D/L estimates directly on the board.
+
+HumanChessAI is useful for:
+
+- human-like chess move prediction
+- studying realistic opponent responses
+- chess analysis by player rating / Elo
+- practicing against more human-looking move choices
+- comparing likely human moves with your own ideas
+- exploring positions without relying on Stockfish-best-move output
+
+## Main features
+
+- **Maia3-5M human move prediction**
+- **White and Black Elo conditioning**
+- human continuation lines instead of Stockfish PVs
+- move probabilities shown for likely human moves
+- candidate arrows directly on the chess board
 - W/D/L output from Maia's value head
+- Fast / Balanced / Deep analysis presets
+- multiple human continuation lines
+- drag-and-drop pieces
+- tap-to-move input
+- pawn promotion chooser: Queen, Rook, Bishop, Knight
+- board flip
+- previous / next position navigation
+- split-screen friendly Android layout
+- board position preserved while resizing split screen
+- multiple DroidFish-style board themes and chess piece sets
+- compact DroidFish-style toolbar controls
+- FEN loading/copying
+- PGN copy/export support
 - Android-native ONNX Runtime inference
 
-## Model verification
+## Game modes
 
-The Maia3-5M PyTorch checkpoint was exported to ONNX with an export-only MultiheadAttention replacement that reuses the checkpoint's exact trained Q/K/V and output-projection weights.
+HumanChessAI includes:
 
-The exported model was checked against the original PyTorch model before Android integration. On the verification input:
+- **Analysis Mode**
+- **Edit / re-play Game**
+- **Play White**
+- **Play Black**
+- **Two Players**
+- **Computer vs Computer**
+
+The AI side uses Maia human move prediction rather than Stockfish-style best-move search.
+
+## Human move probabilities, not engine evaluations
+
+A high Maia probability means that a move is predicted to be common for a human player around the selected Elo. It does **not** necessarily mean that move is objectively the strongest chess move.
+
+For example, HumanChessAI may prefer a natural move that humans frequently choose even when a conventional engine would prefer a different tactical or positional continuation.
+
+## Maia3 on Android
+
+The app runs the **Maia3-5M neural network on-device** using Microsoft ONNX Runtime for Android.
+
+The Maia3 PyTorch checkpoint is exported to ONNX during the GitHub Actions build. The export uses an export-compatible MultiheadAttention implementation while reusing the checkpoint's trained Q/K/V and output-projection weights.
+
+### Model verification
+
+The exported ONNX model was checked against the original PyTorch model before Android integration. On the verification input:
 
 - Original vs exportable PyTorch move logits: max difference about `1.14e-5`
 - Exportable PyTorch vs ONNX move logits: max difference about `1.24e-5`
-- The exact same top-5 move indices were returned by all three implementations
+- all implementations returned the exact same top-5 move indices
 
 The model uses 8 historical board states, 12 piece channels per board, and separate self/opponent Elo inputs.
 
-## APK build
+## Android requirements
 
-The repository intentionally does **not** store the ~20 MB ONNX external-data file in Git.
+- Android 8.0 or newer (`minSdk 26`)
+- current APK is built for `arm64-v8a` devices
 
-GitHub Actions automatically:
+Because the neural network runs locally, the APK is larger than a normal lightweight chess GUI.
 
-1. installs Maia3 and the ONNX exporter,
-2. downloads the Maia3-5M checkpoint,
-3. exports the verified ONNX graph and weights,
-4. bundles them into the Android APK,
-5. builds `app-debug.apk`, and
-6. publishes it as the `HumanChessAI-debug-apk` workflow artifact.
+## APK releases
 
-Open the repository's **Actions** tab, open the latest **Build Android APK** run, then download the `HumanChessAI-debug-apk` artifact.
+Every successful build from the `main` branch updates the permanent GitHub release asset:
 
-## Local Android build
+**`HumanChessAI.apk`**
 
-The Android app requires Java 17 and Android SDK 35. Before a local Gradle build, generate the model assets with:
+Direct download:
+
+https://github.com/BALAJI56237/HumanChessAI/releases/download/latest-beta/HumanChessAI.apk
+
+This means the same download link can be shared publicly while the APK itself is replaced with newer builds.
+
+## Build HumanChessAI locally
+
+The Android app requires Java 17 and the Android SDK. Before a local Gradle build, generate the Maia ONNX assets with:
 
 ```bash
 python tools/export_maia_onnx.py --output-dir app/src/main/assets/models
 ```
 
-Then build:
+Then build the Android APK:
 
 ```bash
 gradle :app:assembleDebug
 ```
 
-## Notes
+GitHub Actions performs the complete model export and Android build automatically.
 
-This project is a human-behavior chess predictor, not a replacement for a conventional best-move chess engine. A high Maia probability means a move is predicted to be likely for a human at the selected rating level; it does not mean the move is objectively strongest.
+## Open-source components and attribution
 
-Maia3 is a separate upstream project. Review its license and attribution requirements before redistributing builds or publishing this project more broadly.
+HumanChessAI uses or references open-source software including:
+
+- **Maia3** for human chess move prediction
+- **ONNX Runtime** for on-device neural-network inference
+- **chesslib** for chess rules and position handling
+- selected **DroidFish** UI assets / chess piece sets under their applicable open-source license terms
+
+License notices for redistributed assets are bundled with the application/build process. Review the upstream licenses before redistributing modified builds.
+
+## Project name
+
+The official project name is **HumanChessAI** (also written as **Human Chess AI**).
+
+Official GitHub repository:
+
+https://github.com/BALAJI56237/HumanChessAI
+
+Official Android APK download:
+
+https://github.com/BALAJI56237/HumanChessAI/releases/download/latest-beta/HumanChessAI.apk
+
+---
+
+**Search terms:** HumanChessAI, Human Chess AI, HumanChessAI APK, human-like chess AI, human chess move predictor, Maia chess Android, Maia3 Android, chess AI by Elo, human move prediction chess, Android chess analysis app.
