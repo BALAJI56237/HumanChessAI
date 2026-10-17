@@ -35,7 +35,6 @@ jobs:
             test -s "app/src/main/assets/pieces/${set}/bp.svg"
           done
 
-          # DroidFish uses 36x32 SVG artwork for the six buttons beside the board.
           for icon in open_file analyze flip mode left right; do
             curl -fL --retry 3 \
               "https://raw.githubusercontent.com/peterosterlund2/droidfish/master/DroidFishApp/src/main/res/raw/${icon}.svg" \
@@ -47,8 +46,6 @@ jobs:
             https://raw.githubusercontent.com/peterosterlund2/droidfish/master/COPYING \
             -o app/src/main/assets/licenses/DROIDFISH_GPLv3.txt
 
-          # Match the DroidFish default toolbar exactly: file, analysis, flip,
-          # game mode, previous position, next position. Settings stays in the drawer.
           python3 - <<'PY'
           from pathlib import Path
 
@@ -77,7 +74,6 @@ jobs:
               s = s.replace(old, new, 1)
 
           css = '''
-          /* Exact DroidFish 36x32 SVG toolbar artwork. */
           .tools .tool.dfIconButton{
             background:transparent !important;
             border:0 !important;
@@ -115,25 +111,16 @@ jobs:
           set -euxo pipefail
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
-          # Backend guard: a human promotion must always include an explicit
-          # q/r/b/n choice. Never silently fall back to queen or any other piece.
           controller = Path('app/src/main/java/com/humanchessai/app/HumanChessController.kt')
           c = controller.read_text(encoding='utf-8')
-          old_controller = '''    private fun playLocked(from: String, to: String, promotion: String?, clearRedo: Boolean) {
-              val raw = from + to + (promotion ?: "")
-              var match = legalMoveByUci(board, raw)
-              if (match == null && promotion == null) {
-                  match = legalMoveByUci(board, "${from}${to}q")
-              }
-              if (match == null) throw IllegalArgumentException("Illegal move")
-              val uci = board.toUci(match)
-              board.doMove(match)
-              moveHistory.add(uci)
-              if (clearRedo) redoHistory.clear()
-          }
-          '''
-          new_controller = '''    private fun playLocked(from: String, to: String, promotion: String?, clearRedo: Boolean) {
+
+          pattern = re.compile(
+              r'    private fun playLocked\(from: String, to: String, promotion: String\?, clearRedo: Boolean\) \{.*?\n    \}\n\n    private fun playUciLocked',
+              re.S,
+          )
+          replacement = '''    private fun playLocked(from: String, to: String, promotion: String?, clearRedo: Boolean) {
               val base = from + to
               val promotionRequired = board.legalMoves().any { move ->
                   val uci = board.toUci(move)
@@ -153,110 +140,73 @@ jobs:
               moveHistory.add(uci)
               if (clearRedo) redoHistory.clear()
           }
-          '''
-          if old_controller not in c:
-              raise SystemExit('Could not find promotion fallback in HumanChessController.kt')
-          controller.write_text(c.replace(old_controller, new_controller, 1), encoding='utf-8')
 
-          # UI guard: Android WebView can synthesize a click after the finger is
-          # released on the last-rank square. If the promotion dialog appears in
-          # the same event cycle, that click can land on Queen/Rook/Bishop/Knight
-          # without a deliberate second tap. Keep the choices disabled briefly
-          # after opening, then require a fresh tap exactly like DroidFish.
+          private fun playUciLocked'''
+          c2, count = pattern.subn(replacement, c, count=1)
+          if count != 1:
+              raise SystemExit(f'Expected one playLocked block, replaced {count}')
+          controller.write_text(c2, encoding='utf-8')
+
           activity = Path('app/src/main/java/com/humanchessai/app/MainActivity.kt')
           a = activity.read_text(encoding='utf-8')
 
-          old_css = '''            .hcaPromotionItem {
-              width: 100% !important;
-          '''
-          new_css = '''            .hcaPromotionItem {
-              pointer-events: none !important;
-              width: 100% !important;
-          '''
-          if old_css not in a:
-              raise SystemExit('Could not find promotion item CSS')
-          a = a.replace(old_css, new_css, 1)
+          def replace_once(text, old, new, label):
+              if old not in text:
+                  raise SystemExit(f'Missing {label}')
+              return text.replace(old, new, 1)
 
-          old_css_end = '''            .hcaPromotionItem:last-child { border-bottom: 0 !important; }
-            .hcaPromotionItem:active { background: #ffffff18 !important; }
-          '''
-          new_css_end = '''            #hcaPromotionShade.open.ready .hcaPromotionItem { pointer-events: auto !important; }
-            .hcaPromotionItem:last-child { border-bottom: 0 !important; }
-            .hcaPromotionItem:active { background: #ffffff18 !important; }
-          '''
-          if old_css_end not in a:
-              raise SystemExit('Could not find promotion item CSS tail')
-          a = a.replace(old_css_end, new_css_end, 1)
-
-          old_resolver = '''          var promotionResolver = null;
-          function closePromotion(choice) {
-            promotionShade.classList.remove('open');
-          '''
-          new_resolver = '''          var promotionResolver = null;
-          var promotionOpenedAt = 0;
-          var promotionReadyTimer = null;
-          function closePromotion(choice) {
-            promotionShade.classList.remove('open');
-            promotionShade.classList.remove('ready');
-            if (promotionReadyTimer) {
-              clearTimeout(promotionReadyTimer);
-              promotionReadyTimer = null;
-            }
-          '''
-          if old_resolver not in a:
-              raise SystemExit('Could not find promotion resolver block')
-          a = a.replace(old_resolver, new_resolver, 1)
-
-          old_click = '''                btn.onclick = function() { closePromotion(entry[0]); };
-          '''
-          new_click = '''                btn.onclick = function(ev) {
-                  // Ignore the synthetic click generated by the same touch that
-                  // opened this dialog. A promotion must be a separate tap.
+          a = replace_once(
+              a,
+              '.hcaPromotionItem {',
+              '.hcaPromotionItem {\n              pointer-events: none !important;',
+              'promotion item CSS',
+          )
+          a = replace_once(
+              a,
+              '.hcaPromotionItem:last-child { border-bottom: 0 !important; }',
+              '#hcaPromotionShade.open.ready .hcaPromotionItem { pointer-events: auto !important; }\n            .hcaPromotionItem:last-child { border-bottom: 0 !important; }',
+              'promotion ready CSS',
+          )
+          a = replace_once(
+              a,
+              'var promotionResolver = null;',
+              'var promotionResolver = null;\n          var promotionOpenedAt = 0;\n          var promotionReadyTimer = null;',
+              'promotion resolver',
+          )
+          a = replace_once(
+              a,
+              "promotionShade.classList.remove('open');",
+              "promotionShade.classList.remove('open');\n            promotionShade.classList.remove('ready');\n            if (promotionReadyTimer) { clearTimeout(promotionReadyTimer); promotionReadyTimer = null; }",
+              'promotion close handler',
+          )
+          a = replace_once(
+              a,
+              'btn.onclick = function() { closePromotion(entry[0]); };',
+              '''btn.onclick = function(ev) {
                   if (performance.now() - promotionOpenedAt < 300) {
                     if (ev) { ev.preventDefault(); ev.stopPropagation(); }
                     return;
                   }
                   closePromotion(entry[0]);
-                };
-          '''
-          if old_click not in a:
-              raise SystemExit('Could not find promotion button click handler')
-          a = a.replace(old_click, new_click, 1)
-
-          old_open = '''              promotionShade.classList.add('open');
-            });
-          }
-          promotionShade.addEventListener('click', function(e) {
-            if (e.target === promotionShade) closePromotion(null);
-          });
-          '''
-          new_open = '''              promotionOpenedAt = performance.now();
-              promotionShade.classList.remove('ready');
-              promotionShade.classList.add('open');
-              promotionReadyTimer = setTimeout(function() {
-                promotionReadyTimer = null;
-                if (promotionShade.classList.contains('open')) promotionShade.classList.add('ready');
-              }, 300);
-            });
-          }
-          promotionShade.addEventListener('click', function(e) {
-            if (performance.now() - promotionOpenedAt < 300) {
-              e.preventDefault();
-              e.stopPropagation();
-              return;
-            }
-            if (e.target === promotionShade) closePromotion(null);
-          });
-          '''
-          if old_open not in a:
-              raise SystemExit('Could not find promotion dialog open block')
-          a = a.replace(old_open, new_open, 1)
+                };''',
+              'promotion button handler',
+          )
+          a = replace_once(
+              a,
+              "promotionShade.classList.add('open');",
+              "promotionOpenedAt = performance.now();\n              promotionShade.classList.remove('ready');\n              promotionShade.classList.add('open');\n              promotionReadyTimer = setTimeout(function() {\n                promotionReadyTimer = null;\n                if (promotionShade.classList.contains('open')) promotionShade.classList.add('ready');\n              }, 300);",
+              'promotion open handler',
+          )
+          a = replace_once(
+              a,
+              "if (e.target === promotionShade) closePromotion(null);",
+              "if (performance.now() - promotionOpenedAt < 300) { e.preventDefault(); e.stopPropagation(); return; }\n            if (e.target === promotionShade) closePromotion(null);",
+              'promotion shade click handler',
+          )
 
           activity.write_text(a, encoding='utf-8')
           PY
 
-          # Verify the two protections are present in the exact sources that
-          # Gradle will compile into the APK.
           grep -F 'throw IllegalArgumentException("Choose a promotion piece")' app/src/main/java/com/humanchessai/app/HumanChessController.kt
           grep -F "promotionShade.classList.add('ready')" app/src/main/java/com/humanchessai/app/MainActivity.kt
           grep -F 'pointer-events: none !important' app/src/main/java/com/humanchessai/app/MainActivity.kt
