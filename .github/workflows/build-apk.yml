@@ -227,16 +227,22 @@ jobs:
           set -euxo pipefail
           python3 - <<'PY'
           from pathlib import Path
+
           p = Path('app/src/main/java/com/humanchessai/app/MainActivity.kt')
           s = p.read_text(encoding='utf-8')
-          old = '''            path == "/api/predictions" ||
-            path == "/api/pv" ||'''
-          new = '''            path == "/api/predictions" ||
-            path == "/api/stockfish" ||
-            path == "/api/pv" ||'''
-          if old not in s:
-              raise SystemExit('Could not locate NativeBridge AI executor routes')
-          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          needle = 'path == "/api/predictions" ||'
+          if 'path == "/api/stockfish" ||' not in s:
+              pos = s.find(needle)
+              if pos < 0:
+                  raise SystemExit('Could not locate predictions executor route')
+              line_end = s.find('\n', pos)
+              if line_end < 0:
+                  raise SystemExit('Malformed NativeBridge executor route')
+              line_start = s.rfind('\n', 0, pos) + 1
+              indent = s[line_start:pos]
+              insert = indent + 'path == "/api/stockfish" ||\n'
+              s = s[:line_end + 1] + insert + s[line_end + 1:]
+              p.write_text(s, encoding='utf-8')
           PY
           grep -F 'path == "/api/stockfish"' app/src/main/java/com/humanchessai/app/MainActivity.kt
 
