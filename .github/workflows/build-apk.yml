@@ -3,7 +3,9 @@ name: Build Android APK
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches:
+      - main
+      - feature/maia23-79-stockfish-eval
 
 permissions:
   contents: write
@@ -11,7 +13,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 120
 
     steps:
       - name: Checkout HumanChessAI
@@ -97,6 +99,12 @@ jobs:
           if marker not in s:
               raise SystemExit('Could not find </style> in index.html')
           s = s.replace(marker, css + '\n' + marker, 1)
+
+          if 'maia_stockfish.css' not in s:
+              s = s.replace('</head>', '<link rel="stylesheet" href="maia_stockfish.css">\n</head>', 1)
+          if 'maia_stockfish.js' not in s:
+              s = s.replace('</body>', '<script src="maia_stockfish.js"></script>\n</body>', 1)
+
           p.write_text(s, encoding='utf-8')
           PY
 
@@ -104,6 +112,8 @@ jobs:
           find app/src/main/assets/pieces -maxdepth 1 -mindepth 1 -type d -printf '%f\n' | sort
           echo "DroidFish toolbar icons:"
           ls -lh app/src/main/assets/ui/
+          grep -F 'maia_stockfish.css' app/src/main/assets/index.html
+          grep -F 'maia_stockfish.js' app/src/main/assets/index.html
 
       - name: Harden pawn promotion selection
         shell: bash
@@ -211,6 +221,25 @@ jobs:
           grep -F "promotionShade.classList.add('ready')" app/src/main/java/com/humanchessai/app/MainActivity.kt
           grep -F 'pointer-events: none !important' app/src/main/java/com/humanchessai/app/MainActivity.kt
 
+      - name: Route Stockfish evaluation off the control thread
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/com/humanchessai/app/MainActivity.kt')
+          s = p.read_text(encoding='utf-8')
+          old = '''            path == "/api/predictions" ||
+            path == "/api/pv" ||'''
+          new = '''            path == "/api/predictions" ||
+            path == "/api/stockfish" ||
+            path == "/api/pv" ||'''
+          if old not in s:
+              raise SystemExit('Could not locate NativeBridge AI executor routes')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          PY
+          grep -F 'path == "/api/stockfish"' app/src/main/java/com/humanchessai/app/MainActivity.kt
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -226,14 +255,41 @@ jobs:
           git -C .ci/maia3 checkout 1e13597c42d4858b7cfd7cfdae01e297263364b2
           python -m pip install -e .ci/maia3
 
-      - name: Export verified Maia3-5M ONNX model
+      - name: Export Maia3 5M, 23M and 79M ONNX models
         shell: bash
         run: |
-          python tools/export_maia_onnx.py --output-dir app/src/main/assets/models
+          set -euxo pipefail
+          for model in maia3-5m maia3-23m maia3-79m; do
+            python tools/export_maia_onnx.py --model "$model" --output-dir app/src/main/assets/models
+          done
+
           echo "Generated model assets:"
           ls -lh app/src/main/assets/models/
-          test -s app/src/main/assets/models/maia3-5m.onnx
-          test -s app/src/main/assets/models/maia3-5m.onnx.data
+          for model in maia3-5m maia3-23m maia3-79m; do
+            test -s "app/src/main/assets/models/${model}.onnx"
+            test -s "app/src/main/assets/models/${model}.onnx.data"
+          done
+
+      - name: Bundle official Stockfish 19 Android arm64
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p app/src/main/jniLibs/arm64-v8a app/src/main/assets/licenses /tmp/stockfish19
+          curl -fL --retry 3 \
+            https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-android-arm64-universal.tar.gz \
+            -o /tmp/stockfish19.tar.gz
+          tar -xzf /tmp/stockfish19.tar.gz -C /tmp/stockfish19
+          SF_BIN="$(find /tmp/stockfish19 -type f -name 'stockfish-android-arm64*' | head -n 1)"
+          test -n "$SF_BIN"
+          cp "$SF_BIN" app/src/main/jniLibs/arm64-v8a/libstockfish.so
+          chmod 755 app/src/main/jniLibs/arm64-v8a/libstockfish.so
+          test -s app/src/main/jniLibs/arm64-v8a/libstockfish.so
+          file app/src/main/jniLibs/arm64-v8a/libstockfish.so
+
+          curl -fL --retry 3 \
+            https://raw.githubusercontent.com/official-stockfish/Stockfish/sf_19/Copying.txt \
+            -o app/src/main/assets/licenses/STOCKFISH_GPLv3.txt
+          test -s app/src/main/assets/licenses/STOCKFISH_GPLv3.txt
 
       - name: Set up Java 17
         uses: actions/setup-java@v5
@@ -285,12 +341,12 @@ jobs:
             gh release upload latest-beta HumanChessAI.apk --clobber
             gh release edit latest-beta \
               --title "HumanChessAI — Latest Build" \
-              --notes "Latest installable Android build from the main branch. Uses Maia3 for human-like move prediction. Source code is available in this repository."
+              --notes "Latest installable Android build from the main branch. Includes Maia3 5M/23M/79M human-like move prediction and Stockfish 19 position evaluation. Source code is available in this repository."
           else
             gh release create latest-beta HumanChessAI.apk \
               --target "$GITHUB_SHA" \
               --title "HumanChessAI — Latest Build" \
-              --notes "Latest installable Android build from the main branch. Uses Maia3 for human-like move prediction. Source code is available in this repository."
+              --notes "Latest installable Android build from the main branch. Includes Maia3 5M/23M/79M human-like move prediction and Stockfish 19 position evaluation. Source code is available in this repository."
           fi
 
           echo "Permanent APK URL:"
