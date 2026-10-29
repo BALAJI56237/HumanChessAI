@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Export Maia3-5M to the ONNX pair bundled by the Android app.
+"""Export a Maia3 checkpoint to the ONNX pair bundled by the Android app.
 
 The exporter replaces torch.nn.MultiheadAttention only in-memory with an
 ONNX-friendly equivalent using the checkpoint's exact Q/K/V and output weights.
 This is the same workaround verified against the original PyTorch model: the
 patched PyTorch graph and ONNX graph preserve the same top move ordering with
-only ~1e-5 numerical differences.
+only tiny numerical differences.
 """
 
 from __future__ import annotations
@@ -19,6 +19,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from maia3.uci import Maia3UCIEngine, parse_args as maia_parse_args
+
+
+SUPPORTED_MODELS = ("maia3-5m", "maia3-23m", "maia3-79m")
 
 
 class ExportableMHA(nn.Module):
@@ -93,18 +96,25 @@ class ExportableMHA(nn.Module):
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--output-dir", default="app/src/main/assets/models")
+    ap.add_argument(
+        "--model",
+        default="maia3-5m",
+        choices=SUPPORTED_MODELS,
+        help="Official Maia3 model alias to export",
+    )
     args = ap.parse_args()
 
+    model_name = args.model.lower()
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / "maia3-5m.onnx"
-    data_path = out_dir / "maia3-5m.onnx.data"
+    out_path = out_dir / f"{model_name}.onnx"
+    data_path = out_dir / f"{model_name}.onnx.data"
     out_path.unlink(missing_ok=True)
     data_path.unlink(missing_ok=True)
 
-    print("Loading Maia3 5M...")
+    print(f"Loading {model_name} ...")
     cfg = maia_parse_args([
-        "--model", "maia3-5m",
+        "--model", model_name,
         "--device", "cpu",
         "--no-use-amp",
     ])
@@ -122,15 +132,21 @@ def main() -> None:
         raise RuntimeError("No torch.nn.MultiheadAttention blocks found")
     print(f"Patched attention blocks: {replaced}")
 
-    # Maia3-5M consumes 8 historical boards * 12 piece channels = 96.
-    # Elo values were exported as float32 in the verified phone model.
+    # All released Maia3 size variants consume 8 historical boards x 12 piece
+    # channels = 96 features per square. Elo stays a runtime input; exporting at
+    # 1500 does NOT lock the model to 1500.
     tokens = torch.zeros((1, 64, 96), dtype=torch.float32)
     self_elo = torch.tensor([1500.0], dtype=torch.float32)
     oppo_elo = torch.tensor([1500.0], dtype=torch.float32)
 
     with torch.inference_mode():
         move_logits, value_logits, ponder = model(tokens, self_elo, oppo_elo)
-    print("PyTorch output shapes:", tuple(move_logits.shape), tuple(value_logits.shape), tuple(ponder.shape))
+    print(
+        "PyTorch output shapes:",
+        tuple(move_logits.shape),
+        tuple(value_logits.shape),
+        tuple(ponder.shape),
+    )
 
     print(f"Exporting {out_path} ...")
     torch.onnx.export(
@@ -150,7 +166,7 @@ def main() -> None:
 
     print(f"ONNX graph: {out_path.stat().st_size:,} bytes")
     print(f"ONNX data : {data_path.stat().st_size:,} bytes")
-    print("Export complete")
+    print(f"Export complete: {model_name}")
 
 
 if __name__ == "__main__":

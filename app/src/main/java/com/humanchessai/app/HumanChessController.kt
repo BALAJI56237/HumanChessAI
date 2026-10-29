@@ -21,7 +21,9 @@ internal class HumanChessController(
 ) : Closeable {
     private val lock = Any()
     private val loader = Executors.newSingleThreadExecutor()
+    private val stockfishLoader = Executors.newSingleThreadExecutor()
     private val generation = AtomicInteger(0)
+    private val modelLoadGeneration = AtomicInteger(0)
 
     private var board = Board().apply { setEnableEvents(false) }
     private val moveHistory = mutableListOf<String>()
@@ -29,7 +31,10 @@ internal class HumanChessController(
 
     @Volatile private var engine: MaiaOnnxEngine? = null
     @Volatile private var predictorError: String? = null
+    @Volatile private var stockfishEngine: StockfishEngine? = null
+    @Volatile private var stockfishError: String? = null
 
+    private var modelName = MaiaOnnxEngine.DEFAULT_MODEL
     private var whiteElo = 1500
     private var blackElo = 1500
     private var topN = 3
@@ -39,11 +44,43 @@ internal class HumanChessController(
     private var gameMode = "two"
 
     init {
+        requestModelLoad(modelName)
+        stockfishLoader.execute {
+            try {
+                stockfishEngine = StockfishEngine(context)
+            } catch (t: Throwable) {
+                stockfishError = t.message ?: t.javaClass.simpleName
+            } finally {
+                onModelReady()
+            }
+        }
+    }
+
+    private fun requestModelLoad(requestedModel: String) {
+        val ticket = modelLoadGeneration.incrementAndGet()
+        val previous = synchronized(lock) {
+            val old = engine
+            engine = null
+            predictorError = null
+            old
+        }
+
         loader.execute {
             try {
-                engine = MaiaOnnxEngine(context)
+                previous?.close()
+                val loaded = MaiaOnnxEngine(context, requestedModel)
+                val keep = synchronized(lock) {
+                    ticket == modelLoadGeneration.get() && modelName == requestedModel
+                }
+                if (keep) {
+                    engine = loaded
+                } else {
+                    loaded.close()
+                }
             } catch (t: Throwable) {
-                predictorError = t.message ?: t.javaClass.simpleName
+                if (ticket == modelLoadGeneration.get()) {
+                    predictorError = t.message ?: t.javaClass.simpleName
+                }
             } finally {
                 onModelReady()
             }
@@ -55,6 +92,7 @@ internal class HumanChessController(
         "/api/move" -> move(body)
         "/api/mode" -> mode(body)
         "/api/predictions" -> predictions(body)
+        "/api/stockfish" -> stockfish(body)
         "/api/ai-move" -> aiMove()
         "/api/undo" -> undo()
         "/api/redo" -> redo()
@@ -93,6 +131,12 @@ internal class HumanChessController(
 
     private fun settings(body: JSONObject): NativeResponse {
         return try {
+            val requestedModel = body.optString("model", modelName).trim().lowercase()
+            if (requestedModel !in MaiaOnnxEngine.SUPPORTED_MODELS) {
+                return error(400, "Unsupported Maia model: $requestedModel")
+            }
+
+            var modelChanged = false
             synchronized(lock) {
                 whiteElo = body.optInt("white_elo", whiteElo).coerceIn(0, 5000)
                 blackElo = body.optInt("black_elo", blackElo).coerceIn(0, 5000)
@@ -101,8 +145,13 @@ internal class HumanChessController(
                 pvPlies = body.optInt("pv_plies", pvPlies).coerceIn(2, 16)
                 val p = body.optString("analysis_profile", analysisProfile).trim().lowercase()
                 analysisProfile = if (p in setOf("fast", "balanced", "deep", "custom")) p else "custom"
+                if (requestedModel != modelName) {
+                    modelName = requestedModel
+                    modelChanged = true
+                }
                 generation.incrementAndGet()
             }
+            if (modelChanged) requestModelLoad(requestedModel)
             ok(baseState())
         } catch (_: Throwable) {
             error(400, "Invalid settings")
@@ -158,6 +207,30 @@ internal class HumanChessController(
             val arr = JSONArray()
             preds.forEach { arr.put(predictionJson(it)) }
             ok(JSONObject().put("predictions", arr).put("generation", snap.generation))
+        } catch (t: Throwable) {
+            error(500, t.message ?: t.javaClass.simpleName)
+        }
+    }
+
+    private fun stockfish(body: JSONObject): NativeResponse {
+        val evaluator = stockfishEngine ?: return error(503, stockfishError ?: "Stockfish is still loading")
+        val snap = snapshot()
+        val requested = if (body.has("generation")) body.optInt("generation", -1) else null
+        if (requested != null && requested != snap.generation) return staleResponse()
+
+        return try {
+            val moveTime = body.optInt("movetime_ms", 300).coerceIn(75, 3000)
+            val evaluation = evaluator.evaluate(snap.fen, moveTime)
+            if (snap.generation != generation.get()) return staleResponse()
+            ok(
+                JSONObject()
+                    .put("depth", evaluation.depth)
+                    .put("cp_white", evaluation.cpWhite ?: JSONObject.NULL)
+                    .put("mate_white", evaluation.mateWhite ?: JSONObject.NULL)
+                    .put("pv", evaluation.pv)
+                    .put("bestmove", evaluation.bestMove)
+                    .put("generation", snap.generation)
+            )
         } catch (t: Throwable) {
             error(500, t.message ?: t.javaClass.simpleName)
         }
@@ -418,6 +491,7 @@ internal class HumanChessController(
             .put(
                 "settings",
                 JSONObject()
+                    .put("model", modelName)
                     .put("white_elo", whiteElo)
                     .put("black_elo", blackElo)
                     .put("top_n", topN)
@@ -425,10 +499,12 @@ internal class HumanChessController(
                     .put("pv_plies", pvPlies)
                     .put("analysis_profile", analysisProfile)
             )
-            .put("model_label", "maia3-5m")
+            .put("model_label", modelName)
             .put("game_mode", gameMode)
             .put("predictor_ready", engine != null)
             .put("predictor_error", predictorError ?: JSONObject.NULL)
+            .put("stockfish_ready", stockfishEngine != null)
+            .put("stockfish_error", stockfishError ?: JSONObject.NULL)
             .put("analysis_generation", generation.get())
             .put("cpu_threads", 4)
             .put("predictions", JSONArray())
@@ -495,7 +571,10 @@ internal class HumanChessController(
     private fun error(status: Int, message: String) = NativeResponse(status, JSONObject().put("error", message))
 
     override fun close() {
+        modelLoadGeneration.incrementAndGet()
         loader.shutdownNow()
+        stockfishLoader.shutdownNow()
         engine?.close()
+        stockfishEngine?.close()
     }
 }

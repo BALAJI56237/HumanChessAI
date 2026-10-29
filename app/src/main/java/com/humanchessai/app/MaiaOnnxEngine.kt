@@ -25,7 +25,10 @@ internal data class Prediction(
     val loss: Double,
 )
 
-internal class MaiaOnnxEngine(private val context: Context) : Closeable {
+internal class MaiaOnnxEngine(
+    private val context: Context,
+    val modelName: String = DEFAULT_MODEL,
+) : Closeable {
     private val env: OrtEnvironment = OrtEnvironment.getEnvironment()
     private val sessionOptions: OrtSession.SessionOptions
     private val session: OrtSession
@@ -37,16 +40,20 @@ internal class MaiaOnnxEngine(private val context: Context) : Closeable {
     }
 
     init {
+        require(modelName in SUPPORTED_MODELS) { "Unsupported Maia model: $modelName" }
+
         val modelDir = File(context.filesDir, "maia-model").apply { mkdirs() }
-        copyAsset("models/maia3-5m.onnx", File(modelDir, "maia3-5m.onnx"))
-        copyAsset("models/maia3-5m.onnx.data", File(modelDir, "maia3-5m.onnx.data"))
+        val graphName = "$modelName.onnx"
+        val dataName = "$modelName.onnx.data"
+        copyAsset("models/$graphName", File(modelDir, graphName))
+        copyAsset("models/$dataName", File(modelDir, dataName))
 
         sessionOptions = OrtSession.SessionOptions().apply {
             setIntraOpNumThreads(4)
             setInterOpNumThreads(1)
             setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
         }
-        session = env.createSession(File(modelDir, "maia3-5m.onnx").absolutePath, sessionOptions)
+        session = env.createSession(File(modelDir, graphName).absolutePath, sessionOptions)
     }
 
     private fun copyAsset(assetPath: String, outFile: File) {
@@ -304,8 +311,14 @@ internal class MaiaOnnxEngine(private val context: Context) : Closeable {
         return mirrorSquare(uci.substring(0, 2)) + mirrorSquare(uci.substring(2, 4)) + suffix
     }
 
+    @Synchronized
     override fun close() {
         session.close()
         sessionOptions.close()
+    }
+
+    companion object {
+        const val DEFAULT_MODEL = "maia3-5m"
+        val SUPPORTED_MODELS = setOf("maia3-5m", "maia3-23m", "maia3-79m")
     }
 }
