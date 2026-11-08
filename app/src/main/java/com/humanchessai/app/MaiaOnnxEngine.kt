@@ -77,6 +77,7 @@ internal class MaiaOnnxEngine(
     fun predict(
         board: Board,
         history: List<String>,
+        initialFen: String,
         whiteElo: Int,
         blackElo: Int,
         topN: Int,
@@ -84,13 +85,16 @@ internal class MaiaOnnxEngine(
     ): List<Prediction> {
         if (board.isMated() || board.isStaleMate()) return emptyList()
         val n = topN.coerceIn(1, 20)
-        val cacheKey = history.joinToString(",") + "|$whiteElo|$blackElo|$n|$needWdl"
+        // A scanned FEN has no replayed moves; cache by actual position + root.
+        // Otherwise imported Black-to-move positions can reuse White's e4 prediction.
+        val cacheKey = "$modelName|${board.fen}|$initialFen|" +
+            history.joinToString(",") + "|$whiteElo|$blackElo|$n|$needWdl"
         cache[cacheKey]?.let { return it }
 
         val sideWhite = board.sideToMove == Side.WHITE
         val selfElo = if (sideWhite) whiteElo else blackElo
         val oppoElo = if (sideWhite) blackElo else whiteElo
-        val tokens = buildTokens(history)
+        val tokens = MaiaPositionEncoder.buildTokens(initialFen, history)
         val raw = infer(tokens, selfElo, oppoElo)
 
         val legal = board.legalMoves()
@@ -126,7 +130,7 @@ internal class MaiaOnnxEngine(
 
             if (needWdl && rankIndex == 0) {
                 val nextHistory = history + uci
-                val nextRaw = infer(buildTokens(nextHistory), oppoElo, selfElo)
+                val nextRaw = infer(MaiaPositionEncoder.buildTokens(initialFen, nextHistory), oppoElo, selfElo)
                 val p = softmax3(nextRaw.valueLogits)
                 win = p[0]
                 draw = p[1]
@@ -217,68 +221,6 @@ internal class MaiaOnnxEngine(
         } catch (_: Throwable) {
             fallback
         }
-    }
-
-    private fun buildTokens(history: List<String>): FloatArray {
-        val replay = Board()
-        replay.setEnableEvents(false)
-        val states = ArrayList<FloatArray>()
-        states += tokenizeBoard(replay)
-
-        for (uci in history) {
-            val move = replay.fromUci(uci)
-            val legal = replay.legalMoves().firstOrNull { replay.toUci(it) == uci } ?: move
-            replay.doMove(legal)
-            states += tokenizeBoard(replay)
-        }
-
-        val recent = states.takeLast(8)
-        val padded = ArrayList<FloatArray>(8)
-        repeat(8 - recent.size) { padded += recent.first() }
-        padded.addAll(recent)
-
-        val out = FloatArray(64 * 96)
-        for (sq in 0 until 64) {
-            for (h in 0 until 8) {
-                val src = padded[h]
-                for (c in 0 until 12) {
-                    out[sq * 96 + h * 12 + c] = src[sq * 12 + c]
-                }
-            }
-        }
-        return out
-    }
-
-    private fun tokenizeBoard(board: Board): FloatArray {
-        val out = FloatArray(64 * 12)
-        val blackToMove = board.sideToMove == Side.BLACK
-        for (sq in Square.values()) {
-            if (sq == Square.NONE) continue
-            val piece = board.getPiece(sq)
-            if (piece == Piece.NONE) continue
-
-            val sourceIndex = sq.ordinal
-            val file = sourceIndex % 8
-            val rank = sourceIndex / 8
-            val targetIndex = if (blackToMove) (7 - rank) * 8 + file else sourceIndex
-
-            val mapped = when (piece.pieceType) {
-                PieceType.PAWN -> 1
-                PieceType.KNIGHT -> 2
-                PieceType.BISHOP -> 3
-                PieceType.ROOK -> 4
-                PieceType.QUEEN -> 5
-                PieceType.KING -> 6
-                else -> 0
-            }
-            if (mapped == 0) continue
-
-            val originalSide = piece.pieceSide
-            val tokenSide = if (!blackToMove) originalSide else if (originalSide == Side.WHITE) Side.BLACK else Side.WHITE
-            val channel = (mapped - 1) + if (tokenSide == Side.BLACK) 6 else 0
-            out[targetIndex * 12 + channel] = 1f
-        }
-        return out
     }
 
     private fun moveIndex(uci: String): Int {
