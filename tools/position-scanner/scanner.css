@@ -31,3 +31,10 @@
 .hcaScanLoad{display:block;width:100%;margin:14px 0;font-size:15px;background:#3d8f79}
 
 .hcaScanCoord{position:absolute;z-index:2;font:700 10px monospace;pointer-events:none}.hcaScanCoord.rank{top:1px;left:2px}.hcaScanCoord.file{bottom:0;right:2px}.hcaScanSquare.light .hcaScanCoord{color:#517ca8}.hcaScanSquare.dark .hcaScanCoord{color:#f0f4e6}
+
+.hcaScanPerspective{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:12px 0 10px;padding:10px;background:#22243a;border-radius:8px}
+.hcaScanPerspective label{font-size:13px;font-weight:700}
+.hcaScanPerspective select{font-size:13px;max-width:55%;min-width:140px;background:#444563;color:#fff;border:1px solid #8b8ca8;border-radius:5px;padding:8px}
+.hcaScanViewLabel{font-size:11px;color:#b3daca;text-align:center}
+.hcaScanBoardHeader{flex-wrap:wrap}
+.hcaScanBoardHeader button{flex:0 0 auto}
