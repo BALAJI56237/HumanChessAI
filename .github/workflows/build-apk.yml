@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - feature/maia23-79-stockfish-eval
+      - feature/chessvision-fen-share
 
 permissions:
   contents: write
@@ -18,6 +19,17 @@ jobs:
     steps:
       - name: Checkout HumanChessAI
         uses: actions/checkout@v4
+
+      - name: Set up Node.js for FEN import checks
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify Chessvision.ai FEN share parsing
+        shell: bash
+        run: |
+          node --check app/src/main/assets/chessvision_share.js
+          node --test tools/chessvision-share/fen-import.test.cjs
 
       - name: Bundle DroidFish piece sets, toolbar icons and license
         shell: bash
