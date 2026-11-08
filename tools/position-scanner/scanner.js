@@ -201,7 +201,7 @@ import { orientScannedPosition, squareAtDisplayIndex, pawnOrientation, placement
     return currentFen();
   }
 
-  async function recognize(file) {
+  async function recognize(file,{fromCrop=false}={}) {
     if (!file || scanning) return;
     if (!file.type.startsWith("image/")) {status("Select a JPEG, PNG, or other image.",true);return;}
     if (file.size>25*1024*1024) {status("Image is too large (25 MB limit). Crop or resize it.",true);return;}
@@ -210,7 +210,7 @@ import { orientScannedPosition, squareAtDisplayIndex, pawnOrientation, placement
     el("hcaScanCamera").disabled=true;
     el("hcaScanLoad").disabled=true;
     rawScan=null;
-    if (!arguments[1]?.fromCrop) {
+    if (!fromCrop) {
       originalFile=file;
       if (imageUrl) URL.revokeObjectURL(imageUrl);
       imageUrl=URL.createObjectURL(file);
@@ -258,13 +258,119 @@ import { orientScannedPosition, squareAtDisplayIndex, pawnOrientation, placement
     el(id).addEventListener("change",e=>{const f=e.target.files?.[0];e.target.value="";if(f)void recognize(f);});
   }
 
+  // Crop: the bounding box is relative to the rendered image, while canvas
+  // extraction uses the natural dimensions. A screenshot may contain much
+  // more UI than chessboard; cropping greatly improves board detection.
+  const cropImg=el("hcaCropImage"), cropSurface=el("hcaCropSurface"), cropBox=el("hcaCropRect");
+  function cropPoint(event) {
+    const r=cropImg.getBoundingClientRect();
+    return {x:Math.max(0,Math.min(1,(event.clientX-r.left)/r.width)),
+            y:Math.max(0,Math.min(1,(event.clientY-r.top)/r.height))};
+  }
+  function paintCrop() {
+    if(!cropSelection)return;
+    const {x0,y0,x1,y1}=cropSelection;
+    cropBox.hidden=false;
+    cropBox.style.left=(Math.min(x0,x1)*100)+"%";
+    cropBox.style.top=(Math.min(y0,y1)*100)+"%";
+    cropBox.style.width=(Math.abs(x1-x0)*100)+"%";
+    cropBox.style.height=(Math.abs(y1-y0)*100)+"%";
+  }
+  cropSurface.addEventListener("pointerdown",event=>{
+    if(!originalFile||!cropImg.complete)return;
+    event.preventDefault();
+    const p=cropPoint(event);
+    cropStart=p;
+    cropSelection={x0:p.x,y0:p.y,x1:p.x,y1:p.y};
+    cropSurface.setPointerCapture(event.pointerId);
+    paintCrop();
+  });
+  cropSurface.addEventListener("pointermove",event=>{
+    if(!cropStart)return;
+    event.preventDefault();
+    const p=cropPoint(event);
+    cropSelection={x0:cropStart.x,y0:cropStart.y,x1:p.x,y1:p.y};
+    paintCrop();
+  });
+  cropSurface.addEventListener("pointerup",event=>{
+    if(!cropStart)return;
+    const p=cropPoint(event);
+    cropSelection={x0:cropStart.x,y0:cropStart.y,x1:p.x,y1:p.y};
+    cropStart=null;
+    paintCrop();
+  });
+  cropSurface.addEventListener("pointercancel",()=>{cropStart=null;});
+  el("hcaScanCropBtn").onclick=()=>{
+    if(!originalFile||!imageUrl)return;
+    cropSelection=null;
+    cropBox.hidden=true;
+    cropImg.src=imageUrl;
+    el("hcaCropPanel").hidden=false;
+    el("hcaScanCropBtn").hidden=true;
+  };
+  el("hcaCropCancel").onclick=()=>{
+    el("hcaCropPanel").hidden=true;
+    el("hcaScanCropBtn").hidden=!originalFile;
+    cropSelection=null;
+    cropStart=null;
+  };
+  el("hcaCropApply").onclick=async()=>{
+    if(!cropSelection||!cropImg.naturalWidth){
+      status("Draw a rectangle around the full chessboard first.",true);return;
+    }
+    const {x0,y0,x1,y1}=cropSelection;
+    const x=Math.min(x0,x1),y=Math.min(y0,y1);
+    const w=Math.abs(x1-x0),h=Math.abs(y1-y0);
+    if(w<.05||h<.05){status("Selected board area is too small.",true);return;}
+    const canvas=document.createElement("canvas");
+    canvas.width=Math.max(1,Math.round(w*cropImg.naturalWidth));
+    canvas.height=Math.max(1,Math.round(h*cropImg.naturalHeight));
+    const ctx=canvas.getContext("2d");
+    if(!ctx){status("Image crop unavailable.",true);return;}
+    ctx.drawImage(cropImg,x*cropImg.naturalWidth,y*cropImg.naturalHeight,
+      w*cropImg.naturalWidth,h*cropImg.naturalHeight,
+      0,0,canvas.width,canvas.height);
+    const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/png"));
+    if(!blob){status("Unable to crop selected image.",true);return;}
+    el("hcaCropPanel").hidden=true;
+    el("hcaScanCropBtn").hidden=false;
+    await recognize(new File([blob],"chessboard-crop.png",{type:"image/png"}),{fromCrop:true});
+  };
+
+  el("hcaScanCopyFen").onclick=()=>{
+    try{checkPosition();copyText(currentFen());}
+    catch(err){status(err?.message||String(err),true);}
+  };
+  el("hcaScanShareFen").onclick=()=>{
+    try{
+      const fen=checkPosition();
+      if(window.AndroidBridge?.shareText)AndroidBridge.shareText(fen);
+      else copyText(fen);
+    }catch(err){status(err?.message||String(err),true);}
+  };
+
+  window.__hcaReceiveSharedImage=async(dataUrl)=>{
+    open();
+    if(typeof dataUrl!=="string"||!dataUrl.startsWith("data:image/jpeg;base64,")){
+      status("Unsupported shared image.",true);return;
+    }
+    try{
+      const binary=atob(dataUrl.slice(dataUrl.indexOf(",")+1));
+      const bytes=new Uint8Array(binary.length);
+      for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+      await recognize(new File([bytes],"shared-chessboard.jpg",{type:"image/jpeg"}));
+    }catch(err){status("Share import: "+(err?.message||String(err)),true);}
+  };
+  window.__hcaReceiveSharedError=(message)=>{open();status("Share import failed: "+message,true);};
+
   el("hcaScanLoad").onclick=async()=>{
     try {
       const fen=checkPosition();
       el("hcaScanLoad").disabled=true;
       status("Loading verified FEN into Maia and Stockfish…");
       await loadFen(fen);
-      if (typeof data!=="undefined" && data?.fen?.split(" ")[0]===fen.split(" ")[0]) {
+      if (typeof data!=="undefined" &&
+          data?.fen?.split(/\s+/).slice(0,2).join(" ")===fen.split(/\s+/).slice(0,2).join(" ")) {
         // Image import starts analysis/free-play for BOTH sides; an earlier
         // Play White/Play Black mode must never block the imported turn.
         data=await api("/api/mode",{body:JSON.stringify({mode:"analysis"})});
