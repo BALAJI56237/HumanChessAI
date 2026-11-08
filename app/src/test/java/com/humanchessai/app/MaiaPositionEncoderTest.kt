@@ -25,11 +25,11 @@ class MaiaPositionEncoderTest {
         assertFalse("Imported image must not encode a regular starting board",
             fromScreenshot.contentEquals(fromOpening))
         // In black-to-move encoding, Black's pawn on e5 maps to e4, own pawn channel 0.
-        assertEquals(1f, feature(fromScreenshot, 28, 0))
+        assertEquals(1f, feature(fromScreenshot, 28, 0), 0f)
         // White's pawn on d5 maps to d4, opponent pawn channel 6.
-        assertEquals(1f, feature(fromScreenshot, 27, 6))
+        assertEquals(1f, feature(fromScreenshot, 27, 6), 0f)
         // The source e2 square must NOT be filled as a white starting pawn.
-        assertEquals(0f, feature(fromScreenshot, 12, 0))
+        assertEquals(0f, feature(fromScreenshot, 12, 0), 0f)
     }
 
     @Test fun subsequentBlackMoveReplaysFromScreenshotFenNotInitialPosition() {
@@ -41,10 +41,10 @@ class MaiaPositionEncoderTest {
 
         val afterMove = MaiaPositionEncoder.buildTokens(screenshotFen, listOf("e5e4"))
         // After Black plays e5e4, White moves next, so e4 is a black pawn (channel 6).
-        assertEquals(1f, feature(afterMove, 28, 6))
-        assertEquals(0f, feature(afterMove, 36, 6))
+        assertEquals(1f, feature(afterMove, 28, 6), 0f)
+        assertEquals(0f, feature(afterMove, 36, 6), 0f)
         // The first history slot remains the original scanned position.
-        assertEquals(1f, feature(afterMove, 28, 0, 6))
+        assertEquals(1f, feature(afterMove, 28, 0, 6), 0f)
     }
 
     @Test fun differentImportedFenCannotReuseOpeningMoveCache() {
