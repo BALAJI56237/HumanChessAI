@@ -59,8 +59,10 @@ HumanChessAI is useful for:
 Open **File → Scan/upload chessboard image** or **Menu → Scan position from image**. Choose a chess screenshot from the gallery or take a photo of a flat diagram. The recognition model is packaged in the APK and works without an internet connection.
 
 - Review the recognized 64-square board. Choose any piece from the palette and tap a square to correct it.
-- Rotate the read if the imported board was from Black's perspective.
-- Set **White** or **Black** to move independently of the pictured orientation.
+- Set **Original image perspective → Black at bottom** for Chess.com screenshots with Black at the bottom (or use Auto detect). The importer rotates piece coordinates into canonical FEN while retaining the original visual viewpoint.
+- The Black-side board displays **h g f e d c b a** left to right and ranks **1 to 8** top to bottom. **Flip VIEW** affects only the display, never the FEN or chess move rules.
+- Set **White** or **Black** to move independently of the pictured orientation. For a screenshot after White played `exd5`, choose Black.
+- The scanner heading must say **v2 · perspective fix**; if you still see the old `Rotate read 180°` button, you are running an older APK and should install the latest build.
 - Confirm castling rights manually (default: none); adjust en passant only if known.
 - Tap **Load position into HumanChessAI** to analyze it with Maia and Stockfish.
 
