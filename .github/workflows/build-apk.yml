@@ -369,10 +369,22 @@ jobs:
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
+      - name: Install Gradle 8.9 from official distribution CDN
+        shell: bash
+        run: |
+          set -euxo pipefail
+          # The setup-gradle action's distribution endpoint has intermittently
+          # returned 504. Fetch from Gradle's official direct downloads CDN.
+          curl -fL --retry 8 --retry-all-errors --retry-delay 5 --connect-timeout 25 \
+            https://downloads.gradle.org/distributions/gradle-8.9-bin.zip \
+            -o /tmp/gradle-8.9-bin.zip
+          curl -fL --retry 5 --retry-all-errors --retry-delay 4 \
+            https://downloads.gradle.org/distributions/gradle-8.9-bin.zip.sha256 \
+            -o /tmp/gradle-8.9-bin.zip.sha256
+          echo "$(cat /tmp/gradle-8.9-bin.zip.sha256)  /tmp/gradle-8.9-bin.zip" | sha256sum -c -
+          unzip -q /tmp/gradle-8.9-bin.zip -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/gradle-8.9/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/gradle-8.9/bin/gradle" --version
 
       - name: Test Maia imported-FEN state and cache
         run: gradle --stacktrace :app:testDebugUnitTest
