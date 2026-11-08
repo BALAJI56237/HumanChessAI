@@ -257,6 +257,7 @@ jobs:
         run: |
           set -euxo pipefail
           npm install --prefix tools/position-scanner --no-audit --no-fund
+          node --test tools/position-scanner/orientation.test.mjs
           tools/position-scanner/node_modules/.bin/esbuild tools/position-scanner/scanner.js \
             --bundle --format=iife --platform=browser --target=chrome100 \
             --outfile=app/src/main/assets/position_scanner.js
