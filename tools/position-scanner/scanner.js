@@ -20,13 +20,16 @@ import { orientScannedPosition, squareAtDisplayIndex, pawnOrientation, placement
   // Display rotation is never allowed to change square coordinates in FEN.
   let previewFlipped = false;
   let rawScan = null;
+  let originalFile = null;
+  let cropSelection = null;
+  let cropStart = null;
 
   const shade = document.createElement("div");
   shade.id = "hcaImageScanner";
   shade.className = "hcaScanShade";
   shade.innerHTML = `
     <section class="hcaScanPage" role="dialog" aria-modal="true" aria-label="Scan chessboard position">
-      <header class="hcaScanHeader"><strong>Scan chessboard <small class="hcaScanVersion">v2 · perspective fix</small></strong><button type="button" id="hcaScanClose" aria-label="Close scanner">✕</button></header>
+      <header class="hcaScanHeader"><strong>Scan chessboard <small class="hcaScanVersion">v3 · Chessvision-style</small></strong><button type="button" id="hcaScanClose" aria-label="Close scanner">✕</button></header>
       <div class="hcaScanBody">
         <p class="hcaScanHint">Import a 2D chessboard screenshot or take a clear straight-on photo of a flat diagram. Image recognition works offline. Confirm every piece before loading.</p>
         <div class="hcaScanActions">
@@ -35,7 +38,21 @@ import { orientScannedPosition, squareAtDisplayIndex, pawnOrientation, placement
           <input id="hcaScanGalleryInput" type="file" accept="image/*" hidden>
           <input id="hcaScanCameraInput" type="file" accept="image/*" capture="environment" hidden>
         </div>
-        <img id="hcaScanOriginal" class="hcaScanOriginal" alt="Imported image" hidden>
+        <div class="hcaScanPreview">
+          <img id="hcaScanOriginal" class="hcaScanOriginal" alt="Imported image" hidden>
+          <button type="button" id="hcaScanCropBtn" hidden>Select board area</button>
+        </div>
+        <div id="hcaCropPanel" class="hcaCropPanel" hidden>
+          <p>Drag across the chessboard from one corner to its opposite corner. Include all 64 squares, then tap Scan selection.</p>
+          <div id="hcaCropSurface" class="hcaCropSurface">
+            <img id="hcaCropImage" draggable="false" alt="Original screenshot for board cropping">
+            <div id="hcaCropRect" class="hcaCropRect" hidden></div>
+          </div>
+          <div class="hcaCropActions">
+            <button type="button" id="hcaCropCancel">Cancel</button>
+            <button type="button" id="hcaCropApply">Scan selection</button>
+          </div>
+        </div>
         <p id="hcaScanStatus" class="hcaScanStatus" aria-live="polite">Choose an image to start.</p>
         <div class="hcaScanPerspective"><label for="hcaScanPerspective">Original image perspective</label>
           <select id="hcaScanPerspective" aria-label="Original screenshot orientation">
@@ -65,6 +82,10 @@ import { orientScannedPosition, squareAtDisplayIndex, pawnOrientation, placement
         <label class="hcaScanLabel">FEN preview
           <textarea id="hcaScanFen" readonly rows="2" spellcheck="false"></textarea>
         </label>
+        <div class="hcaScanFenActions">
+          <button type="button" id="hcaScanCopyFen">Copy FEN</button>
+          <button type="button" id="hcaScanShareFen">Share FEN</button>
+        </div>
         <button type="button" id="hcaScanLoad" class="hcaScanLoad">Load position into HumanChessAI</button>
       </div>
     </section>`;
@@ -188,12 +209,16 @@ import { orientScannedPosition, squareAtDisplayIndex, pawnOrientation, placement
     el("hcaScanGallery").disabled=true;
     el("hcaScanCamera").disabled=true;
     el("hcaScanLoad").disabled=true;
-    if (imageUrl) URL.revokeObjectURL(imageUrl);
-    imageUrl=URL.createObjectURL(file);
     rawScan=null;
-    const preview=el("hcaScanOriginal");
-    preview.src=imageUrl;
-    preview.hidden=false;
+    if (!arguments[1]?.fromCrop) {
+      originalFile=file;
+      if (imageUrl) URL.revokeObjectURL(imageUrl);
+      imageUrl=URL.createObjectURL(file);
+      const preview=el("hcaScanOriginal");
+      preview.src=imageUrl;
+      preview.hidden=false;
+      el("hcaScanCropBtn").hidden=false;
+    }
     status("Detecting chessboard and reading 64 squares locally…");
     try {
       const scan=await recognizer.recognize(file);
