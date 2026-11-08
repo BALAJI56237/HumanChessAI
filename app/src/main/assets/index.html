@@ -310,7 +310,15 @@ function renderBoard(){
 function drawArrows(){
   const svg=$('#arrows');svg.innerHTML='';if(!analysisOn||!preds.length)return;
   const colors=activeTheme().arrows;
-  preds.slice(0,5).forEach((p,i)=>{
+  // Never draw arrows for a previous turn or the opposite color.
+  // The backend can finish an older prediction while an image FEN is loading.
+  const legal=new Set(data?.legal_moves||[]);
+  const current=preds.filter(p=>{
+    if(!p?.uci||!legal.has(p.uci))return false;
+    const from=p.uci.slice(0,2),piece=data?.pieces?.[from];
+    return !!piece && (data.turn==='white'?piece===piece.toUpperCase():piece===piece.toLowerCase());
+  });
+  current.slice(0,5).forEach((p,i)=>{
     const [x1,y1]=coords(p.uci.slice(0,2)),[x2,y2]=coords(p.uci.slice(2,4)),dx=x2-x1,dy=y2-y1,len=Math.hypot(dx,dy)||1,ux=dx/len,uy=dy/len,endX=x2-ux*20,endY=y2-uy*20,c=colors[i%colors.length];
     const line=document.createElementNS('http://www.w3.org/2000/svg','line');
     line.setAttribute('x1',x1);line.setAttribute('y1',y1);line.setAttribute('x2',endX);line.setAttribute('y2',endY);
@@ -354,12 +362,20 @@ async function startAnalysis(){
     // Defensive display gate: imported Black-to-move positions must never
     // show White's arrows, even if a stale model result slips through.
     const currentLegal=new Set(data.legal_moves||[]);
-    preds=(q.predictions||[]).filter(p=>currentLegal.has(p.uci));drawArrows();
+    preds=(q.predictions||[]).filter(p=>{
+      if(!currentLegal.has(p.uci))return false;
+      const piece=data.pieces?.[p.uci.slice(0,2)];
+      return !!piece && (data.turn==='white'?piece===piece.toUpperCase():piece===piece.toLowerCase());
+    });drawArrows();
     if(preds[0])$('#wdl').textContent=`W/D/L: ${(preds[0].win*100).toFixed(0)} / ${(preds[0].draw*100).toFixed(0)} / ${(preds[0].loss*100).toFixed(0)}`;
     const cfg=data.settings||{},pv=await api('/api/pv',{body:JSON.stringify({generation:g,count:cfg.pv_count||1,plies:cfg.pv_plies||4})});
     if(token!==analysisEpoch||g!==data.analysis_generation)return;
     $('#pvs').innerHTML='';
-    (pv.lines||[]).filter(line=>currentLegal.has(line.first_move_uci)).forEach(line=>{const d=document.createElement('div');d.className='pv';d.innerHTML=`<span class="pct">${(line.first_probability*100).toFixed(1)}%</span>${line.moves.map(m=>m.san).join(' ')}`;$('#pvs').appendChild(d)});
+    (pv.lines||[]).filter(line=>{
+      if(!currentLegal.has(line.first_move_uci))return false;
+      const piece=data.pieces?.[line.first_move_uci.slice(0,2)];
+      return !!piece && (data.turn==='white'?piece===piece.toUpperCase():piece===piece.toLowerCase());
+    }).forEach(line=>{const d=document.createElement('div');d.className='pv';d.innerHTML=`<span class="pct">${(line.first_probability*100).toFixed(1)}%</span>${line.moves.map(m=>m.san).join(' ')}`;$('#pvs').appendChild(d)});
     st.className='status';st.textContent=`${data.fullmove}${data.turn==='black'?'...':'.'} ${data.turn==='white'?'White':'Black'} to move`;
   }catch(e){if(e.status!==409){st.className='status error';st.textContent=e.message}}
 }
