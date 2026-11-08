@@ -650,6 +650,17 @@ private class NativeBridge(
     }
 
     @JavascriptInterface
+    fun shareText(text: String) {
+        activity.runOnUiThread {
+            val share = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, text)
+            }
+            activity.startActivity(Intent.createChooser(share, "Share chess position (FEN)"))
+        }
+    }
+
+    @JavascriptInterface
     fun platform(): String = "android-native"
 
     @JavascriptInterface
