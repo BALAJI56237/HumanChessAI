@@ -1,5 +1,5 @@
 import { createRecognizer, resolveOrientation, inferCastling } from "@scoriiu/fenshot";
-import { canonicalizeScan, canonicalIndex, pawnOrientation, placementFromSquares } from "./orientation.js";
+import { orientScannedPosition, squareAtDisplayIndex, pawnOrientation, placementFromSquares } from "./orientation.js";
 
 (() => {
   if (window.__hcaImageScannerInstalled) return;
@@ -19,6 +19,7 @@ import { canonicalizeScan, canonicalIndex, pawnOrientation, placementFromSquares
   let imageUrl = null;
   // Display rotation is never allowed to change square coordinates in FEN.
   let previewFlipped = false;
+  let rawScan = null;
 
   const shade = document.createElement("div");
   shade.id = "hcaImageScanner";
@@ -36,9 +37,16 @@ import { canonicalizeScan, canonicalIndex, pawnOrientation, placementFromSquares
         </div>
         <img id="hcaScanOriginal" class="hcaScanOriginal" alt="Imported image" hidden>
         <p id="hcaScanStatus" class="hcaScanStatus" aria-live="polite">Choose an image to start.</p>
-        <div class="hcaScanBoardHeader"><strong>Review and edit</strong><button type="button" id="hcaScanRotate">Flip board view</button><button type="button" id="hcaScanFixOrientation" title="Use only if the scanned FEN squares are backwards">Fix FEN direction</button></div>
-        <div id="hcaScanBoard" class="hcaScanBoard" aria-label="Editable board, White at bottom"></div>
-        <p class="hcaScanHint">The board may show Black at the bottom like your screenshot. Flip board view does not change FEN or move rules. Tap a square to fix a piece.</p>
+        <div class="hcaScanPerspective"><label for="hcaScanPerspective">Original image perspective</label>
+          <select id="hcaScanPerspective" aria-label="Original screenshot orientation">
+            <option value="auto">Auto detect</option>
+            <option value="white">White at bottom</option>
+            <option value="black">Black at bottom</option>
+          </select>
+        </div>
+        <div class="hcaScanBoardHeader"><strong>Review and edit</strong><span id="hcaScanViewLabel" class="hcaScanViewLabel">White at bottom · a–h</span><button type="button" id="hcaScanRotate">Flip VIEW</button></div>
+        <div id="hcaScanBoard" class="hcaScanBoard" aria-label="Editable chessboard preview"></div>
+        <p class="hcaScanHint">Black-at-bottom view displays h → a and ranks 1 → 8. Changing image perspective corrects FEN; Flip VIEW only changes how the position is drawn. Check pieces before loading.</p>
         <div id="hcaScanPalette" class="hcaScanPalette" role="group" aria-label="Piece selection"></div>
         <fieldset class="hcaScanOptions"><legend>Who moves next?</legend>
           <label><input type="radio" name="hcaScanTurn" value="w" checked> White</label>
@@ -87,13 +95,16 @@ import { canonicalizeScan, canonicalIndex, pawnOrientation, placementFromSquares
 
   function renderBoard() {
     boardEl.innerHTML = Array.from({length:64},(_,i)=>{
-      const j=canonicalIndex(i, previewFlipped);
-      const p=squares[j], rank=8-Math.floor(j/8), file=files[j%8];
+      const square=squareAtDisplayIndex(i,previewFlipped);
+      const j=square.index;
+      const p=squares[j], rank=square.rank, file=square.file;
       const dark=((Math.floor(j/8)+j%8)%2===1);
       const coords=(i%8===0?'<span class="hcaScanCoord rank">'+rank+'</span>':'')+(i>=56?'<span class="hcaScanCoord file">'+file+'</span>':'');
       return '<button type="button" class="hcaScanSquare '+(dark?'dark':'light')+'" data-square="'+j+'" aria-label="'+file+rank+' '+(names[p]||'Empty')+'">'+coords+(p==="."?"":img(p))+'</button>';
     }).join("");
     el("hcaScanFen").value=currentFen();
+    el("hcaScanViewLabel").textContent=previewFlipped?"Black at bottom · h–a / 1–8":"White at bottom · a–h / 8–1";
+    boardEl.setAttribute("aria-label",previewFlipped?"Black at bottom, h through a":"White at bottom, a through h");
   }
 
   function selectPiece(piece) {
@@ -125,11 +136,20 @@ import { canonicalizeScan, canonicalIndex, pawnOrientation, placementFromSquares
     renderBoard();
     status("Board VIEW flipped. FEN and legal move directions are unchanged.");
   };
-  el("hcaScanFixOrientation").onclick=()=>{
-    squares=squares.slice().reverse();
-    previewFlipped=!previewFlipped;
+  // This acts on the RAW screenshot scan, not an already-rotated FEN.
+  // It also resets manual square edits, because the image interpretation changed.
+  function setImagePerspective(perspective) {
+    if (!rawScan) { status("Select an image before choosing its orientation.",true); return null; }
+    const fixed=orientScannedPosition(rawScan.placement,perspective,rawScan.resolvedPlacement,rawScan.hint);
+    squares=fixed.squares;
+    previewFlipped=fixed.blackAtBottom;
     renderBoard();
-    status("FEN piece coordinates rotated. The visible screenshot orientation is preserved. Verify pawns and kings.");
+    return fixed;
+  }
+  el("hcaScanPerspective").onchange=()=>{
+    const selectedPerspective=el("hcaScanPerspective").value;
+    const fixed=setImagePerspective(selectedPerspective);
+    if (fixed) status("Screenshot interpreted with "+(fixed.blackAtBottom?"Black":"White")+" at the bottom. Please review every piece; manual edits were reset.");
   };
   el("hcaScanGuessCastle").onclick=()=>{
     const guess=inferCastling(placement());
@@ -170,6 +190,7 @@ import { canonicalizeScan, canonicalIndex, pawnOrientation, placementFromSquares
     el("hcaScanLoad").disabled=true;
     if (imageUrl) URL.revokeObjectURL(imageUrl);
     imageUrl=URL.createObjectURL(file);
+    rawScan=null;
     const preview=el("hcaScanOriginal");
     preview.src=imageUrl;
     preview.hidden=false;
@@ -178,16 +199,15 @@ import { canonicalizeScan, canonicalIndex, pawnOrientation, placementFromSquares
       const scan=await recognizer.recognize(file);
       if (!scan) throw new Error("No complete 2D chessboard found. Use a clearer, straight-on screenshot.");
       const oriented=resolveOrientation(scan.placement);
-      const fixed=canonicalizeScan(scan.placement,oriented.placement,oriented.orientation);
-      squares=fixed.squares;
-      previewFlipped=fixed.blackAtBottom;
-      renderBoard();
+      rawScan={placement:scan.placement,resolvedPlacement:oriented.placement,hint:oriented.orientation};
+      el("hcaScanPerspective").value="auto";
+      const fixed=setImagePerspective("auto");
       const pct=(scan.meanConfidence*100).toFixed(0);
       const corrected=fixed.automaticallyCorrected?" Fixed the upside-down FEN automatically.":"";
       if (!scan.plausible || !scan.reliable) {
         status("Low-confidence scan ("+pct+"%). Correct every square before loading."+corrected, true);
       } else {
-        status("Detected "+(previewFlipped?"Black-at-bottom":"White-at-bottom")+" screenshot ("+pct+"% confidence)."+corrected+" White and Black pawns will now move in their legal directions.");
+        status("Detected "+(previewFlipped?"Black-at-bottom":"White-at-bottom")+" screenshot ("+pct+"% confidence)."+corrected+" Check that files read "+(previewFlipped?"h to a":"a to h")+" along the bottom.");
       }
     } catch(err) {
       status("Scan failed: "+(err?.message||String(err)),true);
