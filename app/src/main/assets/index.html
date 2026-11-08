@@ -351,12 +351,15 @@ async function startAnalysis(){
   try{
     const q=await api('/api/predictions',{body:JSON.stringify({generation:g})});
     if(token!==analysisEpoch||g!==data.analysis_generation)return;
-    preds=q.predictions||[];drawArrows();
+    // Defensive display gate: imported Black-to-move positions must never
+    // show White's arrows, even if a stale model result slips through.
+    const currentLegal=new Set(data.legal_moves||[]);
+    preds=(q.predictions||[]).filter(p=>currentLegal.has(p.uci));drawArrows();
     if(preds[0])$('#wdl').textContent=`W/D/L: ${(preds[0].win*100).toFixed(0)} / ${(preds[0].draw*100).toFixed(0)} / ${(preds[0].loss*100).toFixed(0)}`;
     const cfg=data.settings||{},pv=await api('/api/pv',{body:JSON.stringify({generation:g,count:cfg.pv_count||1,plies:cfg.pv_plies||4})});
     if(token!==analysisEpoch||g!==data.analysis_generation)return;
     $('#pvs').innerHTML='';
-    (pv.lines||[]).forEach(line=>{const d=document.createElement('div');d.className='pv';d.innerHTML=`<span class="pct">${(line.first_probability*100).toFixed(1)}%</span>${line.moves.map(m=>m.san).join(' ')}`;$('#pvs').appendChild(d)});
+    (pv.lines||[]).filter(line=>currentLegal.has(line.first_move_uci)).forEach(line=>{const d=document.createElement('div');d.className='pv';d.innerHTML=`<span class="pct">${(line.first_probability*100).toFixed(1)}%</span>${line.moves.map(m=>m.san).join(' ')}`;$('#pvs').appendChild(d)});
     st.className='status';st.textContent=`${data.fullmove}${data.turn==='black'?'...':'.'} ${data.turn==='white'?'White':'Black'} to move`;
   }catch(e){if(e.status!==409){st.className='status error';st.textContent=e.message}}
 }
