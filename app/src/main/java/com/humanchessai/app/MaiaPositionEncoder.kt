@@ -19,6 +19,26 @@ import com.github.bhlangonijr.chesslib.Square
  * board states is always the currently analyzed board, including its turn.
  */
 internal object MaiaPositionEncoder {
+    fun cacheKey(
+        modelName: String,
+        boardFen: String,
+        initialFen: String,
+        history: List<String>,
+        whiteElo: Int,
+        blackElo: Int,
+        topN: Int,
+        needWdl: Boolean,
+    ): String = listOf(
+        modelName,
+        boardFen,
+        initialFen,
+        history.joinToString(","),
+        whiteElo.toString(),
+        blackElo.toString(),
+        topN.toString(),
+        needWdl.toString(),
+    ).joinToString("|")
+
     fun buildTokens(initialFen: String, history: List<String>): FloatArray {
         val replay = Board().apply {
             setEnableEvents(false)
