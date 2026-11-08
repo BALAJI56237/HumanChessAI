@@ -5,13 +5,22 @@ import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.provider.MediaStore
 import android.os.Bundle
 import android.view.View
 import android.webkit.JavascriptInterface
+import android.webkit.ValueCallback
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.core.content.FileProvider
+import androidx.webkit.WebViewAssetLoader
 import org.json.JSONObject
+import java.io.File
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -19,6 +28,9 @@ class MainActivity : Activity() {
     private lateinit var webView: WebView
     private lateinit var controller: HumanChessController
     private lateinit var bridge: NativeBridge
+    private var imageFileCallback: ValueCallback<Array<Uri>>? = null
+    private var cameraImageUri: Uri? = null
+    private val scannerFileRequest = 9224
 
     /**
      * Mirror DroidFish's real portrait layout instead of guessing with
@@ -409,13 +421,65 @@ class MainActivity : Activity() {
 
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
-        webView.settings.allowFileAccess = true
-        webView.settings.allowContentAccess = false
+        webView.settings.allowFileAccess = false
+        webView.settings.allowContentAccess = true
         webView.settings.mediaPlaybackRequiresUserGesture = true
         webView.settings.setSupportZoom(false)
         webView.setBackgroundColor(android.graphics.Color.rgb(14, 15, 20))
-        webView.webChromeClient = WebChromeClient()
+        // Serve local assets from an HTTPS origin. ONNX Runtime Web must fetch
+        // its model and WASM without enabling unrestricted file URL access.
+        val assets = WebViewAssetLoader.Builder()
+            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
+            .build()
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onShowFileChooser(
+                webView: WebView?,
+                filePathCallback: ValueCallback<Array<Uri>>?,
+                fileChooserParams: FileChooserParams?,
+            ): Boolean {
+                imageFileCallback?.onReceiveValue(null)
+                imageFileCallback = filePathCallback
+
+                val gallery = Intent(Intent.ACTION_GET_CONTENT).apply {
+                    type = "image/*"
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                }
+                var camera: Intent? = null
+                try {
+                    val photo = File.createTempFile("hca_scan_", ".jpg", cacheDir)
+                    val uri = FileProvider.getUriForFile(
+                        this@MainActivity, packageName + ".scannerfiles", photo
+                    )
+                    cameraImageUri = uri
+                    camera = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                        putExtra(MediaStore.EXTRA_OUTPUT, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                        clipData = ClipData.newUri(contentResolver, "Chessboard photo", uri)
+                    }
+                } catch (_: Exception) {
+                    cameraImageUri = null
+                }
+
+                val capture = fileChooserParams?.isCaptureEnabled == true && camera != null
+                val picker = if (capture) camera!! else Intent.createChooser(gallery, "Choose chessboard image").apply {
+                    if (camera != null) putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(camera))
+                }
+                return try {
+                    startActivityForResult(picker, scannerFileRequest)
+                    true
+                } catch (e: Exception) {
+                    imageFileCallback?.onReceiveValue(null)
+                    imageFileCallback = null
+                    false
+                }
+            }
+        }
         webView.webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(
+                view: WebView?, request: WebResourceRequest?
+            ): WebResourceResponse? =
+                request?.url?.let { assets.shouldInterceptRequest(it) }
+
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 webView.evaluateJavascript(droidFishExactLayoutPatch, null)
@@ -434,7 +498,17 @@ class MainActivity : Activity() {
         bridge = NativeBridge(this, webView, controller)
         webView.addJavascriptInterface(bridge, "AndroidBridge")
 
-        webView.loadUrl("file:///android_asset/index.html")
+        webView.loadUrl("https://appassets.androidplatform.net/assets/index.html")
+    }
+
+    @Deprecated("Android legacy activity result for WebView file chooser")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, intent: Intent?) {
+        super.onActivityResult(requestCode, resultCode, intent)
+        if (requestCode != scannerFileRequest) return
+        val selected = if (resultCode == RESULT_OK) intent?.data ?: cameraImageUri else null
+        imageFileCallback?.onReceiveValue(selected?.let { arrayOf(it) })
+        imageFileCallback = null
+        cameraImageUri = null
     }
 
     override fun onBackPressed() {
@@ -446,6 +520,8 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        imageFileCallback?.onReceiveValue(null)
+        imageFileCallback = null
         bridge.close()
         controller.close()
         webView.removeJavascriptInterface("AndroidBridge")
