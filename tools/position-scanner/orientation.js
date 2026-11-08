@@ -82,6 +82,47 @@ export function canonicalizeScan(rawPlacement, hintedPlacement, hint = "white") 
   };
 }
 
+/**
+ * A scanner image is read top-to-bottom, left-to-right, regardless of how the
+ * original chessboard is oriented. An image with Black at the bottom must
+ * rotate its array by 180 degrees before the array is serialized to FEN.
+ *
+ * Explicit user choice takes precedence over the pawn-based auto detection.
+ * This method always starts with the original raw scan, never the current
+ * editable board, so toggling the perspective cannot flip coordinates twice.
+ */
+export function orientScannedPosition(rawPlacement, perspective = "auto", resolvedPlacement = rawPlacement, resolvedHint = "white") {
+  if (perspective === "auto") {
+    return canonicalizeScan(rawPlacement, resolvedPlacement, resolvedHint);
+  }
+  if (perspective !== "white" && perspective !== "black") {
+    throw new Error("Perspective must be auto, white or black");
+  }
+  const raw = parsePlacement(rawPlacement);
+  const blackAtBottom = perspective === "black";
+  return {
+    squares: blackAtBottom ? raw.slice().reverse() : raw,
+    blackAtBottom,
+    automaticallyCorrected: blackAtBottom,
+    basedOnPawns: false,
+    chosenByUser: true
+  };
+}
+
+/**
+ * Returns coordinate labels for an actual visible square, never altering the
+ * stored FEN. For Black at bottom the top-left is h1 and bottom-left is h8.
+ */
+export function squareAtDisplayIndex(i, flipped = false) {
+  if (!Number.isInteger(i) || i < 0 || i >= 64) throw new Error("Invalid board index");
+  const j = canonicalIndex(i, flipped);
+  return {
+    index: j,
+    file: "abcdefgh"[j % 8],
+    rank: 8 - Math.floor(j / 8),
+  };
+}
+
 /** Grid index maps visual square to canonical FEN square. */
 export function canonicalIndex(visibleIndex, flipped) {
   return flipped ? 63 - visibleIndex : visibleIndex;
