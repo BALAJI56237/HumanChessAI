@@ -17,7 +17,7 @@ test("reversed black-at-bottom scan rotates actual FEN to restore pawn direction
   const r = canonicalizeScan(reversed, reversed, "white");
   assert.equal(r.blackAtBottom, true);
   assert.equal(r.automaticallyCorrected, true);
-  assert.equal(placementFromSquares(r.squares), "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR".replace(/qk/,"kq").replace(/qk/,"kq")); // letters stay rotated
+  assert.equal(placementFromSquares(r.squares), standard);
   assert.ok(pawnOrientation(r.squares).score > 0);
 });
 
