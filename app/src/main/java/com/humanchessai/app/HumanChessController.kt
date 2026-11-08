@@ -26,6 +26,8 @@ internal class HumanChessController(
     private val modelLoadGeneration = AtomicInteger(0)
 
     private var board = Board().apply { setEnableEvents(false) }
+    // Source position for the move history. Importing a FEN resets this root.
+    private var initialFen: String = board.fen
     private val moveHistory = mutableListOf<String>()
     private val redoHistory = mutableListOf<String>()
 
@@ -161,6 +163,7 @@ internal class HumanChessController(
     private data class Snapshot(
         val fen: String,
         val history: List<String>,
+        val initialFen: String,
         val generation: Int,
         val whiteElo: Int,
         val blackElo: Int,
@@ -173,6 +176,7 @@ internal class HumanChessController(
         Snapshot(
             fen = board.fen,
             history = moveHistory.toList(),
+            initialFen = initialFen,
             generation = generation.get(),
             whiteElo = whiteElo,
             blackElo = blackElo,
@@ -198,6 +202,7 @@ internal class HumanChessController(
             val preds = predictor.predict(
                 local,
                 snap.history,
+                snap.initialFen,
                 snap.whiteElo,
                 snap.blackElo,
                 snap.topN,
@@ -246,6 +251,7 @@ internal class HumanChessController(
             val pred = predictor.predict(
                 local,
                 snap.history,
+                snap.initialFen,
                 snap.whiteElo,
                 snap.blackElo,
                 1,
@@ -293,6 +299,7 @@ internal class HumanChessController(
     private fun reset(): NativeResponse {
         synchronized(lock) {
             board = Board().apply { setEnableEvents(false) }
+            initialFen = board.fen
             moveHistory.clear()
             redoHistory.clear()
             generation.incrementAndGet()
@@ -310,6 +317,7 @@ internal class HumanChessController(
             }
             synchronized(lock) {
                 board = loaded
+                initialFen = loaded.fen
                 moveHistory.clear()
                 redoHistory.clear()
                 generation.incrementAndGet()
@@ -333,6 +341,7 @@ internal class HumanChessController(
             val roots = predictor.predict(
                 rootBoard,
                 snap.history,
+                snap.initialFen,
                 snap.whiteElo,
                 snap.blackElo,
                 count,
@@ -371,6 +380,7 @@ internal class HumanChessController(
                     current = predictor.predict(
                         work,
                         workHistory,
+                        snap.initialFen,
                         snap.whiteElo,
                         snap.blackElo,
                         1,
@@ -459,7 +469,7 @@ internal class HumanChessController(
         val legal = JSONArray()
         board.legalMoves().forEach { legal.put(board.toUci(it)) }
 
-        val sans = sanHistory(moveHistory)
+        val sans = sanHistory(moveHistory, initialFen)
         val isMate = board.isMated
         val isStale = board.isStaleMate
         val isDraw = board.isDraw
@@ -510,11 +520,11 @@ internal class HumanChessController(
             .put("predictions", JSONArray())
     }
 
-    private fun sanHistory(history: List<String>): List<String> {
+    private fun sanHistory(history: List<String>, rootFen: String): List<String> {
         if (history.isEmpty()) return emptyList()
         return try {
-            val list = MoveList()
-            val replay = Board().apply { setEnableEvents(false) }
+            val list = MoveList(rootFen)
+            val replay = Board().apply { setEnableEvents(false); loadFromFen(rootFen) }
             history.forEach { uci ->
                 val m = legalMoveByUci(replay, uci) ?: replay.fromUci(uci)
                 list.add(m)
