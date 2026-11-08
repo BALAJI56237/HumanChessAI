@@ -26,7 +26,7 @@ import { orientScannedPosition, squareAtDisplayIndex, pawnOrientation, placement
   shade.className = "hcaScanShade";
   shade.innerHTML = `
     <section class="hcaScanPage" role="dialog" aria-modal="true" aria-label="Scan chessboard position">
-      <header class="hcaScanHeader"><strong>Scan chessboard</strong><button type="button" id="hcaScanClose" aria-label="Close scanner">✕</button></header>
+      <header class="hcaScanHeader"><strong>Scan chessboard <small class="hcaScanVersion">v2 · perspective fix</small></strong><button type="button" id="hcaScanClose" aria-label="Close scanner">✕</button></header>
       <div class="hcaScanBody">
         <p class="hcaScanHint">Import a 2D chessboard screenshot or take a clear straight-on photo of a flat diagram. Image recognition works offline. Confirm every piece before loading.</p>
         <div class="hcaScanActions">
