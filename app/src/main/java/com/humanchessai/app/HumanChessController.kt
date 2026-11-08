@@ -422,7 +422,7 @@ internal class HumanChessController(
         return try {
             val work = boardFromFen(snap.fen)
             val workHistory = snap.history.toMutableList()
-            val roots = predictor.predict(work, workHistory, snap.whiteElo, snap.blackElo, 20, needWdl = false)
+            val roots = predictor.predict(work, workHistory, snap.initialFen, snap.whiteElo, snap.blackElo, 20, needWdl = false)
             var current = roots.firstOrNull { it.uci == requestedUci }
                 ?: return error(400, "Move is not a legal predicted move")
             val out = JSONArray()
@@ -444,7 +444,7 @@ internal class HumanChessController(
                 work.doMove(legal)
                 workHistory.add(current.uci)
                 if (work.isMated || work.isStaleMate || work.isDraw || ++ply > plies) break
-                current = predictor.predict(work, workHistory, snap.whiteElo, snap.blackElo, 1, needWdl = false)
+                current = predictor.predict(work, workHistory, snap.initialFen, snap.whiteElo, snap.blackElo, 1, needWdl = false)
                     .firstOrNull() ?: break
             }
             ok(JSONObject().put("line", out).put("plies", out.length()).put("human_line", true))
