@@ -324,7 +324,9 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p app/src/main/jniLibs/arm64-v8a app/src/main/assets/licenses /tmp/stockfish19
-          curl -fL --retry 3 \
+          # GitHub release CDN intermittently returns HTTP 504. Keep retrying
+          # official release assets instead of failing unrelated scanner fixes.
+          curl -fL --retry 10 --retry-all-errors --retry-delay 5 --connect-timeout 25 --max-time 180 \
             https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-android-arm64-universal.tar.gz \
             -o /tmp/stockfish19.tar.gz
           tar -xzf /tmp/stockfish19.tar.gz -C /tmp/stockfish19
