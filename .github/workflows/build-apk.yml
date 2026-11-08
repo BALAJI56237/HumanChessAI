@@ -360,6 +360,9 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      - name: Test Maia imported-FEN state and cache
+        run: gradle --stacktrace :app:testDebugUnitTest
+
       - name: Build debug APK
         run: gradle --stacktrace :app:assembleDebug
 
