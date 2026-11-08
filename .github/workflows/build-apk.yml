@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - feature/maia23-79-stockfish-eval
+      - feature/chessboard-image-scanner
 
 permissions:
   contents: write
@@ -245,6 +246,47 @@ jobs:
               p.write_text(s, encoding='utf-8')
           PY
           grep -F 'path == "/api/stockfish"' app/src/main/java/com/humanchessai/app/MainActivity.kt
+
+      - name: Set up Node for offline image recognition
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Bundle offline chessboard image scanner
+        shell: bash
+        run: |
+          set -euxo pipefail
+          npm install --prefix tools/position-scanner --no-audit --no-fund
+          tools/position-scanner/node_modules/.bin/esbuild tools/position-scanner/scanner.js \
+            --bundle --format=iife --platform=browser --target=chrome100 \
+            --outfile=app/src/main/assets/position_scanner.js
+
+          cp tools/position-scanner/scanner.css app/src/main/assets/position_scanner.css
+          mkdir -p app/src/main/assets/ort app/src/main/assets/models app/src/main/assets/licenses
+          cp tools/position-scanner/node_modules/@scoriiu/fenshot/model/chess-tiles-v2.onnx \
+            app/src/main/assets/models/chess-tiles-v2.onnx
+          cp tools/position-scanner/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs \
+            app/src/main/assets/ort/ort-wasm-simd-threaded.mjs
+          cp tools/position-scanner/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm \
+            app/src/main/assets/ort/ort-wasm-simd-threaded.wasm
+          cp tools/position-scanner/node_modules/@scoriiu/fenshot/LICENSE \
+            app/src/main/assets/licenses/FENSHOT_MIT.txt
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/assets/index.html')
+          s = p.read_text(encoding='utf-8')
+          if 'position_scanner.css' not in s:
+              s = s.replace('</head>', '<link rel="stylesheet" href="position_scanner.css">\n</head>', 1)
+          if 'position_scanner.js' not in s:
+              s = s.replace('</body>', '<script src="position_scanner.js"></script>\n</body>', 1)
+          p.write_text(s, encoding='utf-8')
+          PY
+
+          grep -F 'position_scanner.js' app/src/main/assets/index.html
+          test -s app/src/main/assets/position_scanner.js
+          test -s app/src/main/assets/models/chess-tiles-v2.onnx
+          test -s app/src/main/assets/ort/ort-wasm-simd-threaded.wasm
 
       - name: Set up Python
         uses: actions/setup-python@v5
