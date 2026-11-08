@@ -38,3 +38,18 @@
 .hcaScanViewLabel{font-size:11px;color:#b3daca;text-align:center}
 .hcaScanBoardHeader{flex-wrap:wrap}
 .hcaScanBoardHeader button{flex:0 0 auto}
+
+.hcaScanHeader strong{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}
+.hcaScanVersion{font-size:10px;color:#8bdacc;font-weight:500;letter-spacing:.2px}
+.hcaScanPreview{display:flex;flex-direction:column;align-items:center;gap:7px}
+.hcaScanPreview button,.hcaCropActions button,.hcaScanFenActions button{border:1px solid #9aa2c3;border-radius:7px;color:#f2f4fa;background:#484b70;padding:9px 12px;font-weight:600}
+.hcaScanPreview button[hidden]{display:none}
+.hcaCropPanel{padding:10px;margin:8px 0 12px;background:#202337;border:1px solid #737990;border-radius:9px}
+.hcaCropPanel[hidden]{display:none}
+.hcaCropPanel p{margin:0 0 9px;color:#d3d8ee;font-size:12px}
+.hcaCropSurface{position:relative;display:block;max-width:100%;width:fit-content;margin:auto;touch-action:none;user-select:none;-webkit-user-select:none}
+.hcaCropSurface img{display:block;max-width:100%;max-height:none;width:auto;height:auto;object-fit:contain;pointer-events:none}
+.hcaCropRect{pointer-events:none;position:absolute;box-sizing:border-box;border:3px solid #ffe073;background:#ffee8733;box-shadow:0 0 0 1px #111}
+.hcaCropRect[hidden]{display:none}
+.hcaCropActions,.hcaScanFenActions{display:flex;gap:10px;margin:10px 0}
+.hcaCropActions button,.hcaScanFenActions button{flex:1}
