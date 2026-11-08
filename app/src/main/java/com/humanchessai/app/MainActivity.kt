@@ -435,7 +435,7 @@ class MainActivity : Activity() {
             override fun onShowFileChooser(
                 webView: WebView?,
                 filePathCallback: ValueCallback<Array<Uri>>?,
-                fileChooserParams: FileChooserParams?,
+                fileChooserParams: WebChromeClient.FileChooserParams?,
             ): Boolean {
                 imageFileCallback?.onReceiveValue(null)
                 imageFileCallback = filePathCallback
@@ -460,9 +460,10 @@ class MainActivity : Activity() {
                     cameraImageUri = null
                 }
 
-                val capture = fileChooserParams?.isCaptureEnabled == true && camera != null
-                val picker = if (capture) camera!! else Intent.createChooser(gallery, "Choose chessboard image").apply {
-                    if (camera != null) putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(camera))
+                val captureIntent = camera
+                val capture = fileChooserParams?.isCaptureEnabled == true && captureIntent != null
+                val picker = if (capture) captureIntent!! else Intent.createChooser(gallery, "Choose chessboard image").apply {
+                    if (captureIntent != null) putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(captureIntent))
                 }
                 return try {
                     startActivityForResult(picker, scannerFileRequest)

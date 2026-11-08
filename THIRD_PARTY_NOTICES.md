@@ -27,3 +27,15 @@ Upstream source/tag: https://github.com/official-stockfish/Stockfish/tree/sf_19
 Official release: https://github.com/official-stockfish/Stockfish/releases/tag/sf_19
 
 Stockfish is licensed under GNU GPL version 3. The APK build bundles the upstream `Copying.txt` license at `assets/licenses/STOCKFISH_GPLv3.txt`.
+
+## fenshot image recognizer
+
+HumanChessAI's optional screenshot-to-FEN scanner uses the MIT-licensed `@scoriiu/fenshot` 0.1.5 package and its small `chess-tiles-v2.onnx` classifier. The detector and model run inside Android WebView using ONNX Runtime Web's WASM backend; imported screenshots are not sent to a server.
+
+Upstream: https://github.com/scoriiu/fenshot
+
+The APK includes the package's MIT license at `assets/licenses/FENSHOT_MIT.txt`. The model's intended input is flat 2D board screenshots and diagrams; perspective photos of physical pieces are not supported.
+
+## ONNX Runtime Web
+
+The scanner bundles ONNX Runtime Web 1.26.0 and its WebAssembly inference runtime. Upstream: https://github.com/microsoft/onnxruntime ; license: MIT.

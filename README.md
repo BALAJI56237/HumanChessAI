@@ -54,6 +54,20 @@ HumanChessAI is useful for:
 - PGN copy/export support
 - Android-native ONNX Runtime inference
 
+## Scan a chessboard image (experimental feature branch)
+
+Open **File → Scan/upload chessboard image** or **Menu → Scan position from image**. Choose a chess screenshot from the gallery or take a photo of a flat diagram. The recognition model is packaged in the APK and works without an internet connection.
+
+- Review the recognized 64-square board. Choose any piece from the palette and tap a square to correct it.
+- Rotate the read if the imported board was from Black's perspective.
+- Set **White** or **Black** to move independently of the pictured orientation.
+- Confirm castling rights manually (default: none); adjust en passant only if known.
+- Tap **Load position into HumanChessAI** to analyze it with Maia and Stockfish.
+
+**Limits:** Accuracy depends on image quality and piece set. This scanner targets 2D screenshots and book diagrams, not perspective photos of 3D physical chessboards. A photo alone cannot reliably establish the side to move, castling history, or en passant. Inspect the position before importing.
+
+The source for the scanner lives under `tools/position-scanner/`. It uses the MIT-licensed fenshot model and ONNX Runtime Web.
+
 ## Game modes
 
 HumanChessAI includes:

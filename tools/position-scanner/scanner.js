@@ -113,8 +113,9 @@ import { createRecognizer, resolveOrientation, flipPlacement, inferCastling } fr
   function renderBoard() {
     boardEl.innerHTML = squares.map((p,i)=>{
       const rank=8-Math.floor(i/8), file=files[i%8];
-      const dark=((Math.floor(i/8)+i%8)%2===0);
-      return '<button type="button" class="hcaScanSquare '+(dark?'dark':'light')+'" data-square="'+i+'" aria-label="'+file+rank+' '+(names[p]||'Empty')+'">'+(p==="."?"":img(p))+'</button>';
+      const dark=((Math.floor(i/8)+i%8)%2===1);
+      const coords=(i%8===0?'<span class="hcaScanCoord rank">'+rank+'</span>':'')+(i>=56?'<span class="hcaScanCoord file">'+file+'</span>':'');
+      return '<button type="button" class="hcaScanSquare '+(dark?'dark':'light')+'" data-square="'+i+'" aria-label="'+file+rank+' '+(names[p]||'Empty')+'">'+coords+(p==="."?"":img(p))+'</button>';
     }).join("");
     el("hcaScanFen").value=currentFen();
   }
@@ -158,6 +159,9 @@ import { createRecognizer, resolveOrientation, flipPlacement, inferCastling } fr
   function checkPosition() {
     if (squares.filter(p=>p==="K").length!==1 || squares.filter(p=>p==="k").length!==1)
       throw new Error("Exactly one white king and one black king are required.");
+    const whiteKing=squares.indexOf("K"), blackKing=squares.indexOf("k");
+    if (Math.max(Math.abs(Math.floor(whiteKing/8)-Math.floor(blackKing/8)),Math.abs(whiteKing%8-blackKing%8))<=1)
+      throw new Error("The two kings cannot touch.");
     if (squares.filter(p=>p==="P").length>8 || squares.filter(p=>p==="p").length>8)
       throw new Error("A side cannot have more than eight pawns.");
     for (const p of [...squares.slice(0,8),...squares.slice(56)]) {
