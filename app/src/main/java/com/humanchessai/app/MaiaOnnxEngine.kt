@@ -87,8 +87,9 @@ internal class MaiaOnnxEngine(
         val n = topN.coerceIn(1, 20)
         // A scanned FEN has no replayed moves; cache by actual position + root.
         // Otherwise imported Black-to-move positions can reuse White's e4 prediction.
-        val cacheKey = "$modelName|${board.fen}|$initialFen|" +
-            history.joinToString(",") + "|$whiteElo|$blackElo|$n|$needWdl"
+        val cacheKey = MaiaPositionEncoder.cacheKey(
+            modelName, board.fen, initialFen, history, whiteElo, blackElo, n, needWdl
+        )
         cache[cacheKey]?.let { return it }
 
         val sideWhite = board.sideToMove == Side.WHITE
