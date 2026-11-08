@@ -136,9 +136,27 @@ button{cursor:pointer}
     <h2>File</h2>
     <button class="action" id="copyFen">Copy FEN</button>
     <button class="action" id="pasteFen">Load FEN from clipboard</button>
+    <button class="action" id="openChessvisionImport">Import Chessvision.ai FEN</button>
     <button class="action" id="copyPgn">Copy PGN</button>
     <button class="action" id="fileNew">New Game</button>
     <button class="closeBtn" data-close="fileShade">Close</button>
+  </div>
+</div>
+
+<div id="externalFenShade" class="dialogShade">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="externalFenTitle">
+    <h2 id="externalFenTitle">Import a scanned chess position</h2>
+    <p class="helpText">Scan in Chessvision.ai, then use Share → FEN Text → HumanChessAI. Review the position before importing it for practice or completed-game analysis.</p>
+    <label for="externalFenText">Scanned FEN</label>
+    <textarea class="fenInput" id="externalFenText" spellcheck="false" autocapitalize="off"></textarea>
+    <label for="externalTurn">Side to move</label>
+    <select id="externalTurn" style="display:block;width:100%;padding:10px;margin:6px 0 12px;background:#222;color:#fff;border:1px solid #888;border-radius:6px">
+      <option value="w">White to move</option>
+      <option value="b">Black to move</option>
+    </select>
+    <p id="externalFenStatus" class="helpText" aria-live="polite"></p>
+    <button class="action" id="externalLoadFen">Load position for analysis</button>
+    <button class="closeBtn" id="externalCancel">Cancel</button>
   </div>
 </div>
 
@@ -563,5 +581,6 @@ window.onNativeModelReady=()=>refresh().catch(()=>{});
 syncThemeUi();
 refresh().then(()=>{if(prefs.startupGuide)openOverlay('aboutShade')}).catch(e=>{$('#status').className='status error';$('#status').textContent=e.message});
 </script>
+<script src="chessvision_share.js"></script>
 </body>
 </html>
