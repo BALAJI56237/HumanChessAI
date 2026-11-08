@@ -1,4 +1,5 @@
-import { createRecognizer, resolveOrientation, flipPlacement, inferCastling } from "@scoriiu/fenshot";
+import { createRecognizer, resolveOrientation, inferCastling } from "@scoriiu/fenshot";
+import { canonicalizeScan, canonicalIndex, pawnOrientation, placementFromSquares } from "./orientation.js";
 
 (() => {
   if (window.__hcaImageScannerInstalled) return;
@@ -16,6 +17,8 @@ import { createRecognizer, resolveOrientation, flipPlacement, inferCastling } fr
   let selected = ".";
   let scanning = false;
   let imageUrl = null;
+  // Display rotation is never allowed to change square coordinates in FEN.
+  let previewFlipped = false;
 
   const shade = document.createElement("div");
   shade.id = "hcaImageScanner";
@@ -33,9 +36,9 @@ import { createRecognizer, resolveOrientation, flipPlacement, inferCastling } fr
         </div>
         <img id="hcaScanOriginal" class="hcaScanOriginal" alt="Imported image" hidden>
         <p id="hcaScanStatus" class="hcaScanStatus" aria-live="polite">Choose an image to start.</p>
-        <div class="hcaScanBoardHeader"><strong>Review and edit</strong><button type="button" id="hcaScanRotate">Rotate read 180°</button></div>
+        <div class="hcaScanBoardHeader"><strong>Review and edit</strong><button type="button" id="hcaScanRotate">Flip board view</button><button type="button" id="hcaScanFixOrientation" title="Use only if the scanned FEN squares are backwards">Fix FEN direction</button></div>
         <div id="hcaScanBoard" class="hcaScanBoard" aria-label="Editable board, White at bottom"></div>
-        <p class="hcaScanHint">Select a piece below, then tap a square to correct it. Board always displays White at the bottom.</p>
+        <p class="hcaScanHint">The board may show Black at the bottom like your screenshot. Flip board view does not change FEN or move rules. Tap a square to fix a piece.</p>
         <div id="hcaScanPalette" class="hcaScanPalette" role="group" aria-label="Piece selection"></div>
         <fieldset class="hcaScanOptions"><legend>Who moves next?</legend>
           <label><input type="radio" name="hcaScanTurn" value="w" checked> White</label>
@@ -67,35 +70,7 @@ import { createRecognizer, resolveOrientation, flipPlacement, inferCastling } fr
     return '<img draggable="false" src="pieces/chesscases/' + icons[piece] + '.svg" alt="' + names[piece] + '">';
   }
 
-  function parse(placement) {
-    const rows = placement.split("/");
-    if (rows.length !== 8) throw new Error("Invalid scanned board");
-    const out = [];
-    for (const row of rows) {
-      for (const ch of row) {
-        if (/^[1-8]$/.test(ch)) out.push(...Array(Number(ch)).fill("."));
-        else if (icons[ch]) out.push(ch);
-        else throw new Error("Unexpected piece in scan");
-      }
-    }
-    if (out.length !== 64) throw new Error("Board did not contain 64 squares");
-    return out;
-  }
-
-  function placement() {
-    const rows = [];
-    for (let r=0;r<8;r++) {
-      let row = "", blanks = 0;
-      for (let c=0;c<8;c++) {
-        const piece = squares[r*8+c];
-        if (piece === ".") blanks++;
-        else { if (blanks) row += blanks; blanks=0; row+=piece; }
-      }
-      if (blanks) row+=blanks;
-      rows.push(row);
-    }
-    return rows.join("/");
-  }
+  function placement() { return placementFromSquares(squares); }
 
   function currentFen() {
     const turn = shade.querySelector('input[name="hcaScanTurn"]:checked')?.value || "w";
@@ -111,11 +86,12 @@ import { createRecognizer, resolveOrientation, flipPlacement, inferCastling } fr
   }
 
   function renderBoard() {
-    boardEl.innerHTML = squares.map((p,i)=>{
-      const rank=8-Math.floor(i/8), file=files[i%8];
-      const dark=((Math.floor(i/8)+i%8)%2===1);
+    boardEl.innerHTML = Array.from({length:64},(_,i)=>{
+      const j=canonicalIndex(i, previewFlipped);
+      const p=squares[j], rank=8-Math.floor(j/8), file=files[j%8];
+      const dark=((Math.floor(j/8)+j%8)%2===1);
       const coords=(i%8===0?'<span class="hcaScanCoord rank">'+rank+'</span>':'')+(i>=56?'<span class="hcaScanCoord file">'+file+'</span>':'');
-      return '<button type="button" class="hcaScanSquare '+(dark?'dark':'light')+'" data-square="'+i+'" aria-label="'+file+rank+' '+(names[p]||'Empty')+'">'+coords+(p==="."?"":img(p))+'</button>';
+      return '<button type="button" class="hcaScanSquare '+(dark?'dark':'light')+'" data-square="'+j+'" aria-label="'+file+rank+' '+(names[p]||'Empty')+'">'+coords+(p==="."?"":img(p))+'</button>';
     }).join("");
     el("hcaScanFen").value=currentFen();
   }
@@ -145,9 +121,15 @@ import { createRecognizer, resolveOrientation, flipPlacement, inferCastling } fr
   });
   el("hcaScanEp").addEventListener("input",()=>el("hcaScanFen").value=currentFen());
   el("hcaScanRotate").onclick=()=>{
-    squares=squares.slice().reverse();
+    previewFlipped=!previewFlipped;
     renderBoard();
-    status("Read rotated 180°. Check piece positions before loading.");
+    status("Board VIEW flipped. FEN and legal move directions are unchanged.");
+  };
+  el("hcaScanFixOrientation").onclick=()=>{
+    squares=squares.slice().reverse();
+    previewFlipped=!previewFlipped;
+    renderBoard();
+    status("FEN piece coordinates rotated. The visible screenshot orientation is preserved. Verify pawns and kings.");
   };
   el("hcaScanGuessCastle").onclick=()=>{
     const guess=inferCastling(placement());
@@ -167,6 +149,9 @@ import { createRecognizer, resolveOrientation, flipPlacement, inferCastling } fr
     for (const p of [...squares.slice(0,8),...squares.slice(56)]) {
       if (p==="p"||p==="P") throw new Error("Pawns cannot be on rank 1 or rank 8.");
     }
+    const direction = pawnOrientation(squares);
+    if (direction.white >= 3 && direction.black >= 3 && direction.score < -1.5)
+      throw new Error("Pawns face the wrong direction in FEN. Tap Fix FEN direction before loading.");
     const ep=el("hcaScanEp").value.trim().toLowerCase()||"-";
     if (!/^(-|[a-h][36])$/.test(ep)) throw new Error("En passant must be '-' or a square such as e3/e6.");
     const rights=[...shade.querySelectorAll("[data-castle]:checked")].map(x=>x.dataset.castle);
@@ -193,13 +178,16 @@ import { createRecognizer, resolveOrientation, flipPlacement, inferCastling } fr
       const scan=await recognizer.recognize(file);
       if (!scan) throw new Error("No complete 2D chessboard found. Use a clearer, straight-on screenshot.");
       const oriented=resolveOrientation(scan.placement);
-      squares=parse(oriented.placement);
+      const fixed=canonicalizeScan(scan.placement,oriented.placement,oriented.orientation);
+      squares=fixed.squares;
+      previewFlipped=fixed.blackAtBottom;
       renderBoard();
       const pct=(scan.meanConfidence*100).toFixed(0);
+      const corrected=fixed.automaticallyCorrected?" Fixed the upside-down FEN automatically.":"";
       if (!scan.plausible || !scan.reliable) {
-        status("Low-confidence scan ("+pct+"%). Correct every square, especially kings, before loading.", true);
+        status("Low-confidence scan ("+pct+"%). Correct every square before loading."+corrected, true);
       } else {
-        status("Detected "+(oriented.orientation==="black"?"Black-at-bottom":"White-at-bottom")+" image ("+pct+"% mean confidence). Review pieces and choose side to move.");
+        status("Detected "+(previewFlipped?"Black-at-bottom":"White-at-bottom")+" screenshot ("+pct+"% confidence)."+corrected+" White and Black pawns will now move in their legal directions.");
       }
     } catch(err) {
       status("Scan failed: "+(err?.message||String(err)),true);
@@ -231,8 +219,15 @@ import { createRecognizer, resolveOrientation, flipPlacement, inferCastling } fr
       el("hcaScanLoad").disabled=true;
       status("Loading verified FEN into Maia and Stockfish…");
       await loadFen(fen);
-      if (typeof data!=="undefined" && data?.fen===fen) close();
-      else status("Could not load position. Check the FEN and legality.",true);
+      if (typeof data!=="undefined" && data?.fen?.split(" ")[0]===fen.split(" ")[0]) {
+        // Image import starts analysis/free-play for BOTH sides; an earlier
+        // Play White/Play Black mode must never block the imported turn.
+        data=await api("/api/mode",{body:JSON.stringify({mode:"analysis"})});
+        flipped=previewFlipped;
+        selected=null;quickDest=null;preds=[];render();
+        close();
+        toast("Position imported: "+data.turn+" to move");
+      } else status("Could not load position. Check the FEN and legality.",true);
     } catch(err){status(err?.message||String(err),true);}
     finally{el("hcaScanLoad").disabled=false;}
   };
