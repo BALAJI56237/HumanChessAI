@@ -50,5 +50,8 @@ android {
 
 dependencies {
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.31.0")
+    implementation("androidx.webkit:webkit:1.13.0")
+    implementation("androidx.core:core:1.16.0")
     implementation("com.github.bhlangonijr:chesslib:1.3.7")
+    testImplementation("junit:junit:4.13.2")
 }

@@ -5,13 +5,29 @@ import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
+import android.os.Build
+import android.util.Base64
+import android.content.Intent
+import android.net.Uri
+import android.provider.MediaStore
 import android.os.Bundle
 import android.view.View
 import android.webkit.JavascriptInterface
+import android.webkit.ValueCallback
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.core.content.FileProvider
+import androidx.webkit.WebViewAssetLoader
 import org.json.JSONObject
+import java.io.File
+import java.io.ByteArrayOutputStream
+import kotlin.math.max
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -19,6 +35,12 @@ class MainActivity : Activity() {
     private lateinit var webView: WebView
     private lateinit var controller: HumanChessController
     private lateinit var bridge: NativeBridge
+    private var imageFileCallback: ValueCallback<Array<Uri>>? = null
+    private var cameraImageUri: Uri? = null
+    private val scannerFileRequest = 9224
+    private val shareExecutor = Executors.newSingleThreadExecutor()
+    private var sharedImage: Uri? = null
+    private var pageReady = false
 
     /**
      * Mirror DroidFish's real portrait layout instead of guessing with
@@ -404,21 +426,77 @@ class MainActivity : Activity() {
         window.statusBarColor = android.graphics.Color.rgb(14, 15, 20)
         window.navigationBarColor = android.graphics.Color.rgb(14, 15, 20)
 
+        acceptSharedImage(intent)
         webView = WebView(this)
         setContentView(webView)
 
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
-        webView.settings.allowFileAccess = true
-        webView.settings.allowContentAccess = false
+        webView.settings.allowFileAccess = false
+        webView.settings.allowContentAccess = true
         webView.settings.mediaPlaybackRequiresUserGesture = true
         webView.settings.setSupportZoom(false)
         webView.setBackgroundColor(android.graphics.Color.rgb(14, 15, 20))
-        webView.webChromeClient = WebChromeClient()
+        // Serve local assets from an HTTPS origin. ONNX Runtime Web must fetch
+        // its model and WASM without enabling unrestricted file URL access.
+        val assets = WebViewAssetLoader.Builder()
+            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
+            .build()
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onShowFileChooser(
+                webView: WebView?,
+                filePathCallback: ValueCallback<Array<Uri>>?,
+                fileChooserParams: WebChromeClient.FileChooserParams?,
+            ): Boolean {
+                imageFileCallback?.onReceiveValue(null)
+                imageFileCallback = filePathCallback
+
+                val gallery = Intent(Intent.ACTION_GET_CONTENT).apply {
+                    type = "image/*"
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                }
+                var camera: Intent? = null
+                try {
+                    val photo = File.createTempFile("hca_scan_", ".jpg", cacheDir)
+                    val uri = FileProvider.getUriForFile(
+                        this@MainActivity, packageName + ".scannerfiles", photo
+                    )
+                    cameraImageUri = uri
+                    camera = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                        putExtra(MediaStore.EXTRA_OUTPUT, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                        clipData = ClipData.newUri(contentResolver, "Chessboard photo", uri)
+                    }
+                } catch (_: Exception) {
+                    cameraImageUri = null
+                }
+
+                val captureIntent = camera
+                val capture = fileChooserParams?.isCaptureEnabled == true && captureIntent != null
+                val picker = if (capture) captureIntent!! else Intent.createChooser(gallery, "Choose chessboard image").apply {
+                    if (captureIntent != null) putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(captureIntent))
+                }
+                return try {
+                    startActivityForResult(picker, scannerFileRequest)
+                    true
+                } catch (e: Exception) {
+                    imageFileCallback?.onReceiveValue(null)
+                    imageFileCallback = null
+                    false
+                }
+            }
+        }
         webView.webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(
+                view: WebView?, request: WebResourceRequest?
+            ): WebResourceResponse? =
+                request?.url?.let { assets.shouldInterceptRequest(it) }
+
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 webView.evaluateJavascript(droidFishExactLayoutPatch, null)
+                pageReady = true
+                consumeSharedImage()
             }
         }
         webView.overScrollMode = View.OVER_SCROLL_NEVER
@@ -434,7 +512,93 @@ class MainActivity : Activity() {
         bridge = NativeBridge(this, webView, controller)
         webView.addJavascriptInterface(bridge, "AndroidBridge")
 
-        webView.loadUrl("file:///android_asset/index.html")
+        webView.loadUrl("https://appassets.androidplatform.net/assets/index.html")
+    }
+
+    // Android ACTION_SEND image intent. Only user-shared content URIs are read.
+    private fun acceptSharedImage(incoming: Intent?) {
+        if (incoming?.action != Intent.ACTION_SEND ||
+            incoming.type?.startsWith("image/") != true) return
+        @Suppress("DEPRECATION")
+        val uri = (incoming.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri)
+            ?: incoming.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
+        if (uri == null) return
+        sharedImage = uri
+        if (pageReady) consumeSharedImage()
+    }
+
+    private fun consumeSharedImage() {
+        val uri = sharedImage ?: return
+        if (!pageReady) return
+        sharedImage = null
+        shareExecutor.execute {
+            try {
+                // The model only needs up to about 2K pixels for screenshot OCR.
+                // Keep image bytes transient; never upload or persist the image.
+                val bitmap: Bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    val source = ImageDecoder.createSource(contentResolver, uri)
+                    ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+                        val longest = max(info.size.width, info.size.height)
+                        val sample = max(1, (longest + 2399) / 2400)
+                        decoder.setTargetSampleSize(sample)
+                        decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                    }
+                } else {
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    contentResolver.openInputStream(uri)?.use {
+                        BitmapFactory.decodeStream(it, null, bounds)
+                    }
+                    val sample = max(1, (max(bounds.outWidth, bounds.outHeight) + 2399) / 2400)
+                    val options = BitmapFactory.Options().apply { inSampleSize = sample }
+                    contentResolver.openInputStream(uri)?.use {
+                        BitmapFactory.decodeStream(it, null, options)
+                    } ?: error("Cannot decode shared screenshot")
+                }
+                val out = ByteArrayOutputStream()
+                try {
+                    check(bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)) {
+                        "Could not prepare shared image"
+                    }
+                } finally {
+                    bitmap.recycle()
+                }
+                val encoded = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        webView.evaluateJavascript(
+                            "window.__hcaReceiveSharedImage && window.__hcaReceiveSharedImage('data:image/jpeg;base64,$encoded');",
+                            null
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                val message = JSONObject.quote(e.message ?: "Could not open shared image")
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        webView.evaluateJavascript(
+                            "window.__hcaReceiveSharedError && window.__hcaReceiveSharedError($message);",
+                            null
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        acceptSharedImage(intent)
+    }
+
+    @Deprecated("Android legacy activity result for WebView file chooser")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, intent: Intent?) {
+        super.onActivityResult(requestCode, resultCode, intent)
+        if (requestCode != scannerFileRequest) return
+        val selected = if (resultCode == RESULT_OK) intent?.data ?: cameraImageUri else null
+        imageFileCallback?.onReceiveValue(selected?.let { arrayOf(it) })
+        imageFileCallback = null
+        cameraImageUri = null
     }
 
     override fun onBackPressed() {
@@ -446,6 +610,9 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        imageFileCallback?.onReceiveValue(null)
+        imageFileCallback = null
+        shareExecutor.shutdownNow()
         bridge.close()
         controller.close()
         webView.removeJavascriptInterface("AndroidBridge")
@@ -479,6 +646,17 @@ private class NativeBridge(
                 NativeResponse(500, JSONObject().put("error", t.message ?: t.javaClass.simpleName))
             }
             complete(id, response)
+        }
+    }
+
+    @JavascriptInterface
+    fun shareText(text: String) {
+        activity.runOnUiThread {
+            val share = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, text)
+            }
+            activity.startActivity(Intent.createChooser(share, "Share chess position (FEN)"))
         }
     }
 

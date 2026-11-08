@@ -1,0 +1,13 @@
+{
+  "name": "hca-position-scanner",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "@scoriiu/fenshot": "0.1.5",
+    "onnxruntime-web": "1.26.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
+}

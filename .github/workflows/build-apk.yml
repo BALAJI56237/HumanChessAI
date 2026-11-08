@@ -6,6 +6,8 @@ on:
     branches:
       - main
       - feature/maia23-79-stockfish-eval
+      - feature/chessboard-image-scanner
+      - feature/chessvision-style-import
 
 permissions:
   contents: write
@@ -246,6 +248,48 @@ jobs:
           PY
           grep -F 'path == "/api/stockfish"' app/src/main/java/com/humanchessai/app/MainActivity.kt
 
+      - name: Set up Node for offline image recognition
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Bundle offline chessboard image scanner
+        shell: bash
+        run: |
+          set -euxo pipefail
+          npm install --prefix tools/position-scanner --no-audit --no-fund
+          node --test tools/position-scanner/orientation.test.mjs
+          tools/position-scanner/node_modules/.bin/esbuild tools/position-scanner/scanner.js \
+            --bundle --format=iife --platform=browser --target=chrome100 \
+            --outfile=app/src/main/assets/position_scanner.js
+
+          cp tools/position-scanner/scanner.css app/src/main/assets/position_scanner.css
+          mkdir -p app/src/main/assets/ort app/src/main/assets/models app/src/main/assets/licenses
+          cp tools/position-scanner/node_modules/@scoriiu/fenshot/model/chess-tiles-v2.onnx \
+            app/src/main/assets/models/chess-tiles-v2.onnx
+          cp tools/position-scanner/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs \
+            app/src/main/assets/ort/ort-wasm-simd-threaded.mjs
+          cp tools/position-scanner/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm \
+            app/src/main/assets/ort/ort-wasm-simd-threaded.wasm
+          cp tools/position-scanner/node_modules/@scoriiu/fenshot/LICENSE \
+            app/src/main/assets/licenses/FENSHOT_MIT.txt
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/assets/index.html')
+          s = p.read_text(encoding='utf-8')
+          if 'position_scanner.css' not in s:
+              s = s.replace('</head>', '<link rel="stylesheet" href="position_scanner.css">\n</head>', 1)
+          if 'position_scanner.js' not in s:
+              s = s.replace('</body>', '<script src="position_scanner.js"></script>\n</body>', 1)
+          p.write_text(s, encoding='utf-8')
+          PY
+
+          grep -F 'position_scanner.js' app/src/main/assets/index.html
+          test -s app/src/main/assets/position_scanner.js
+          test -s app/src/main/assets/models/chess-tiles-v2.onnx
+          test -s app/src/main/assets/ort/ort-wasm-simd-threaded.wasm
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -281,13 +325,27 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p app/src/main/jniLibs/arm64-v8a app/src/main/assets/licenses /tmp/stockfish19
-          curl -fL --retry 3 \
+          # GitHub release CDN intermittently returns HTTP 504. Keep retrying
+          # official release assets instead of failing unrelated scanner fixes.
+          if curl -fL --retry 6 --retry-all-errors --retry-delay 4 --connect-timeout 25 --max-time 180 \
             https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-android-arm64-universal.tar.gz \
-            -o /tmp/stockfish19.tar.gz
-          tar -xzf /tmp/stockfish19.tar.gz -C /tmp/stockfish19
-          SF_BIN="$(find /tmp/stockfish19 -type f -name 'stockfish-android-arm64*' | head -n 1)"
-          test -n "$SF_BIN"
-          cp "$SF_BIN" app/src/main/jniLibs/arm64-v8a/libstockfish.so
+            -o /tmp/stockfish19.tar.gz; then
+            tar -xzf /tmp/stockfish19.tar.gz -C /tmp/stockfish19
+            SF_BIN="$(find /tmp/stockfish19 -type f -name 'stockfish-android-arm64*' | head -n 1)"
+            test -n "$SF_BIN"
+            cp "$SF_BIN" app/src/main/jniLibs/arm64-v8a/libstockfish.so
+          else
+            # Same official Stockfish 19 binary was bundled in our already
+            # validated debug APK. Extract it if the official release CDN 504s.
+            echo 'Official CDN unavailable: recovering verified binary from earlier CI artifact'
+            mkdir -p /tmp/hca-stockfish-fallback
+            GH_TOKEN="${{ github.token }}" gh run download 42464697750 \
+              -R BALAJI56237/HumanChessAI \
+              -n HumanChessAI-debug-apk \
+              -D /tmp/hca-stockfish-fallback
+            unzip -p /tmp/hca-stockfish-fallback/app-debug.apk \
+              lib/arm64-v8a/libstockfish.so > app/src/main/jniLibs/arm64-v8a/libstockfish.so
+          fi
           chmod 755 app/src/main/jniLibs/arm64-v8a/libstockfish.so
           test -s app/src/main/jniLibs/arm64-v8a/libstockfish.so
           file app/src/main/jniLibs/arm64-v8a/libstockfish.so
@@ -312,10 +370,25 @@ jobs:
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
+      - name: Install Gradle 8.9 from official distribution CDN
+        shell: bash
+        run: |
+          set -euxo pipefail
+          # The setup-gradle action's distribution endpoint has intermittently
+          # returned 504. Fetch from Gradle's official direct downloads CDN.
+          curl -fL --retry 8 --retry-all-errors --retry-delay 5 --connect-timeout 25 \
+            https://downloads.gradle.org/distributions/gradle-8.9-bin.zip \
+            -o /tmp/gradle-8.9-bin.zip
+          curl -fL --retry 5 --retry-all-errors --retry-delay 4 \
+            https://downloads.gradle.org/distributions/gradle-8.9-bin.zip.sha256 \
+            -o /tmp/gradle-8.9-bin.zip.sha256
+          echo "$(cat /tmp/gradle-8.9-bin.zip.sha256)  /tmp/gradle-8.9-bin.zip" | sha256sum -c -
+          unzip -q /tmp/gradle-8.9-bin.zip -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/gradle-8.9/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/gradle-8.9/bin/gradle" --version
+
+      - name: Test Maia imported-FEN state and cache
+        run: gradle --stacktrace :app:testDebugUnitTest
 
       - name: Build debug APK
         run: gradle --stacktrace :app:assembleDebug
