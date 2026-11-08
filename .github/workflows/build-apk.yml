@@ -326,13 +326,25 @@ jobs:
           mkdir -p app/src/main/jniLibs/arm64-v8a app/src/main/assets/licenses /tmp/stockfish19
           # GitHub release CDN intermittently returns HTTP 504. Keep retrying
           # official release assets instead of failing unrelated scanner fixes.
-          curl -fL --retry 10 --retry-all-errors --retry-delay 5 --connect-timeout 25 --max-time 180 \
+          if curl -fL --retry 6 --retry-all-errors --retry-delay 4 --connect-timeout 25 --max-time 180 \
             https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-android-arm64-universal.tar.gz \
-            -o /tmp/stockfish19.tar.gz
-          tar -xzf /tmp/stockfish19.tar.gz -C /tmp/stockfish19
-          SF_BIN="$(find /tmp/stockfish19 -type f -name 'stockfish-android-arm64*' | head -n 1)"
-          test -n "$SF_BIN"
-          cp "$SF_BIN" app/src/main/jniLibs/arm64-v8a/libstockfish.so
+            -o /tmp/stockfish19.tar.gz; then
+            tar -xzf /tmp/stockfish19.tar.gz -C /tmp/stockfish19
+            SF_BIN="$(find /tmp/stockfish19 -type f -name 'stockfish-android-arm64*' | head -n 1)"
+            test -n "$SF_BIN"
+            cp "$SF_BIN" app/src/main/jniLibs/arm64-v8a/libstockfish.so
+          else
+            # Same official Stockfish 19 binary was bundled in our already
+            # validated debug APK. Extract it if the official release CDN 504s.
+            echo 'Official CDN unavailable: recovering verified binary from earlier CI artifact'
+            mkdir -p /tmp/hca-stockfish-fallback
+            GH_TOKEN="${{ github.token }}" gh run download 42464697750 \
+              -R BALAJI56237/HumanChessAI \
+              -n HumanChessAI-debug-apk \
+              -D /tmp/hca-stockfish-fallback
+            unzip -p /tmp/hca-stockfish-fallback/app-debug.apk \
+              lib/arm64-v8a/libstockfish.so > app/src/main/jniLibs/arm64-v8a/libstockfish.so
+          fi
           chmod 755 app/src/main/jniLibs/arm64-v8a/libstockfish.so
           test -s app/src/main/jniLibs/arm64-v8a/libstockfish.so
           file app/src/main/jniLibs/arm64-v8a/libstockfish.so
