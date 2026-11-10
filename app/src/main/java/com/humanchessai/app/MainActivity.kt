@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.webkit.JavascriptInterface
@@ -19,6 +20,8 @@ class MainActivity : Activity() {
     private lateinit var webView: WebView
     private lateinit var controller: HumanChessController
     private lateinit var bridge: NativeBridge
+    private var pageReady = false
+    private var pendingSharedText: String? = null
 
     /**
      * Mirror DroidFish's real portrait layout instead of guessing with
@@ -419,6 +422,8 @@ class MainActivity : Activity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 webView.evaluateJavascript(droidFishExactLayoutPatch, null)
+                pageReady = true
+                deliverSharedChessPosition()
             }
         }
         webView.overScrollMode = View.OVER_SCROLL_NEVER
@@ -434,7 +439,36 @@ class MainActivity : Activity() {
         bridge = NativeBridge(this, webView, controller)
         webView.addJavascriptInterface(bridge, "AndroidBridge")
 
+        receiveSharedChessPosition(intent)
         webView.loadUrl("file:///android_asset/index.html")
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        receiveSharedChessPosition(intent)
+    }
+
+    private fun receiveSharedChessPosition(sourceIntent: Intent?) {
+        if (sourceIntent?.action != Intent.ACTION_SEND) return
+        if (sourceIntent.type?.startsWith("text/") != true) return
+        val shared = sourceIntent.getStringExtra(Intent.EXTRA_TEXT)?.trim().orEmpty()
+        if (shared.isBlank()) return
+        // Treat shared data as untrusted. Only text is accepted, never arbitrary
+        // file/image URIs or scripts, and the editor validates FEN before loading.
+        pendingSharedText = shared.take(10_000)
+        deliverSharedChessPosition()
+    }
+
+    private fun deliverSharedChessPosition() {
+        if (!pageReady) return
+        val text = pendingSharedText ?: return
+        pendingSharedText = null
+        val quoted = JSONObject.quote(text)
+        webView.evaluateJavascript(
+            "window.onExternalChessPosition && window.onExternalChessPosition($quoted);",
+            null,
+        )
     }
 
     override fun onBackPressed() {

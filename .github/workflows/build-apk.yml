@@ -6,9 +6,11 @@ on:
     branches:
       - main
       - feature/maia23-79-stockfish-eval
+      - feature/chessvision-fen-share
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   build:
@@ -18,6 +20,17 @@ jobs:
     steps:
       - name: Checkout HumanChessAI
         uses: actions/checkout@v4
+
+      - name: Set up Node.js for FEN import checks
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify Chessvision.ai FEN share parsing
+        shell: bash
+        run: |
+          node --check app/src/main/assets/chessvision_share.js
+          node --test tools/chessvision-share/fen-import.test.cjs
 
       - name: Bundle DroidFish piece sets, toolbar icons and license
         shell: bash
@@ -278,16 +291,31 @@ jobs:
 
       - name: Bundle official Stockfish 19 Android arm64
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euxo pipefail
           mkdir -p app/src/main/jniLibs/arm64-v8a app/src/main/assets/licenses /tmp/stockfish19
-          curl -fL --retry 3 \
+          if curl -fL --retry 2 --retry-delay 3 \
             https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-android-arm64-universal.tar.gz \
-            -o /tmp/stockfish19.tar.gz
-          tar -xzf /tmp/stockfish19.tar.gz -C /tmp/stockfish19
-          SF_BIN="$(find /tmp/stockfish19 -type f -name 'stockfish-android-arm64*' | head -n 1)"
-          test -n "$SF_BIN"
-          cp "$SF_BIN" app/src/main/jniLibs/arm64-v8a/libstockfish.so
+            -o /tmp/stockfish19.tar.gz; then
+            tar -xzf /tmp/stockfish19.tar.gz -C /tmp/stockfish19
+            SF_BIN="$(find /tmp/stockfish19 -type f -name 'stockfish-android-arm64*' | head -n 1)"
+            test -n "$SF_BIN"
+            cp "$SF_BIN" app/src/main/jniLibs/arm64-v8a/libstockfish.so
+          else
+            # The official release CDN can return 504. This successful APK
+            # previously bundled the same official Stockfish 19 ARM64 binary.
+            # Temporary fallback while the upstream asset CDN is unreliable.
+            mkdir -p /tmp/hca-sf-fallback
+            gh run download 42464697750 \
+              --repo BALAJI56237/HumanChessAI \
+              -n HumanChessAI-debug-apk \
+              -D /tmp/hca-sf-fallback
+            unzip -p /tmp/hca-sf-fallback/app-debug.apk \
+              lib/arm64-v8a/libstockfish.so \
+              > app/src/main/jniLibs/arm64-v8a/libstockfish.so
+          fi
           chmod 755 app/src/main/jniLibs/arm64-v8a/libstockfish.so
           test -s app/src/main/jniLibs/arm64-v8a/libstockfish.so
           file app/src/main/jniLibs/arm64-v8a/libstockfish.so
