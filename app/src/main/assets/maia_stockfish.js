@@ -42,7 +42,8 @@
       <div class="sfEvalBar" aria-label="Stockfish evaluation">
         <div id="sfEvalWhite" class="sfEvalWhite"></div><div class="sfEvalCenter"></div>
       </div>
-      <div id="sfEvalPv" class="sfEvalPv">Evaluation from White's perspective</div>`;
+      <div id="sfEvalPv" class="sfEvalPv">Evaluation from White's perspective</div>
+      <div id="sfMoveCompare" class="sfMoveCompare">🟠 Stockfish move · thick arrows: Maia</div>`;
     analysis.insertBefore(panel,pvs);
   }
 
@@ -99,6 +100,89 @@
   if(applyButton)applyButton.onclick=applySettings;
 
   let sfEpoch=0;
+  let sfBestMove='';
+  let sfBestGeneration=-1;
+  const sfOrange='#ff8b16';
+  const svgNS='http://www.w3.org/2000/svg';
+
+  // Stockfish's UCI bestmove is returned for the board currently being analyzed.
+  // Do not draw it if the turn or legal move list has changed.
+  function validMove(uci) {
+    const m=String(uci||'').trim().toLowerCase();
+    if(!/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(m))return '';
+    if(!data||!Array.isArray(data.legal_moves)||!data.legal_moves.includes(m))return '';
+    const piece=data.pieces?.[m.slice(0,2)];
+    if(!piece)return '';
+    const movingWhite=piece===piece.toUpperCase();
+    if(movingWhite!==(data.turn==='white'))return '';
+    return m;
+  }
+  function topMaiaMove(){
+    return Array.isArray(preds)?(preds.map(p=>validMove(p?.uci)).find(Boolean)||''):'';
+  }
+  function updateMoveComparison(){
+    const label=document.getElementById('sfMoveCompare');
+    if(!label)return;
+    const m=sfBestGeneration===data?.analysis_generation?validMove(sfBestMove):'';
+    const human=topMaiaMove();
+    const match=!!m&&!!human&&m===human;
+    label.classList.toggle('match',match);
+    if(!analysisOn){label.textContent='Move arrows off';return;}
+    if(!m){label.textContent='Orange: Stockfish best move · thick: Maia';return;}
+    if(!human){label.textContent='🟠 Stockfish '+m+' · Maia pending';return;}
+    label.textContent=match?'✓ Same move · Maia + Stockfish: '+m:'🟠 Stockfish '+m+' · Maia '+human;
+  }
+
+  // Keep Maia's original arrows and draw an independent Stockfish overlay.
+  // When they agree, place a wider orange silhouette UNDER Maia's thick
+  // arrow: the colored border remains visible and both arrows read as one.
+  const originalDrawArrows=drawArrows;
+  drawArrows=function(){
+    originalDrawArrows();
+    const svg=document.getElementById('arrows');
+    if(svg&&analysisOn&&data&&!data.game_over&&sfBestGeneration===data.analysis_generation){
+      const best=validMove(sfBestMove);
+      if(best){
+        const same=best===topMaiaMove();
+        const [x1,y1]=coords(best.slice(0,2));
+        const [x2,y2]=coords(best.slice(2,4));
+        const dx=x2-x1,dy=y2-y1,len=Math.hypot(dx,dy);
+        if(len>0){
+          const ux=dx/len,uy=dy/len,px=-uy,py=ux;
+          const endX=x2-ux*20,endY=y2-uy*20;
+          const group=document.createElementNS(svgNS,'g');
+          group.setAttribute('class',same?'sfBestArrow agrees':'sfBestArrow');
+          group.setAttribute('aria-label',same?'Stockfish agrees with Maia: '+best:'Stockfish best move: '+best);
+          const body=document.createElementNS(svgNS,'line');
+          for(const [k,v] of Object.entries({x1,y1,x2:endX,y2:endY})){
+            body.setAttribute(k,String(v));
+          }
+          body.setAttribute('stroke',sfOrange);
+          body.setAttribute('stroke-width',String(same?19:6));
+          body.setAttribute('stroke-linecap','round');
+          body.setAttribute('stroke-opacity',same?'0.98':'0.95');
+          group.appendChild(body);
+          const head=document.createElementNS(svgNS,'polygon');
+          const base= same?19:12;
+          const spread= same?22:12;
+          const tip=same?3:0;
+          const pts=[
+            [x2+ux*tip,y2+uy*tip],
+            [endX-ux*base+px*spread,endY-uy*base+py*spread],
+            [endX-ux*base-px*spread,endY-uy*base-py*spread],
+          ];
+          head.setAttribute('points',pts.map(p=>p.join(',')).join(' '));
+          head.setAttribute('fill',sfOrange);
+          head.setAttribute('fill-opacity',same?'0.98':'0.95');
+          group.appendChild(head);
+          if(same)svg.insertBefore(group,svg.firstChild);
+          else svg.appendChild(group);
+        }
+      }
+    }
+    updateMoveComparison();
+  };
+
   function setEvalNeutral(message,off){
     const panel=document.getElementById('sfEvalPanel');
     const score=document.getElementById('sfEvalScore');
@@ -110,6 +194,9 @@
     white.style.width='50%';
     score.textContent=message||'—';
     pv.textContent='Evaluation from White\'s perspective';
+    sfBestMove='';
+    sfBestGeneration=-1;
+    drawArrows();
   }
 
   function renderEval(e){
@@ -136,6 +223,9 @@
     score.textContent=`${label} · d${e.depth||0}`;
     const pvText=String(e.pv||'').trim();
     pv.textContent=pvText?`[SF] ${pvText}`:'Stockfish evaluation ready';
+    sfBestMove=validMove(e.bestmove);
+    sfBestGeneration=data.analysis_generation;
+    drawArrows();
   }
 
   async function startStockfishEval(){
