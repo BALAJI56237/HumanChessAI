@@ -8,6 +8,7 @@ on:
       - feature/maia23-79-stockfish-eval
       - feature/chessboard-image-scanner
       - feature/chessvision-style-import
+      - feature/stockfish-orange-bestmove-arrow
 
 permissions:
   contents: write
@@ -289,6 +290,12 @@ jobs:
           test -s app/src/main/assets/position_scanner.js
           test -s app/src/main/assets/models/chess-tiles-v2.onnx
           test -s app/src/main/assets/ort/ort-wasm-simd-threaded.wasm
+
+      - name: Test Stockfish and Maia arrow rendering
+        shell: bash
+        run: |
+          node --check app/src/main/assets/maia_stockfish.js
+          node --test tools/stockfish_arrow_ui.test.cjs
 
       - name: Set up Python
         uses: actions/setup-python@v5
